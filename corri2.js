@@ -2,7 +2,7 @@
 const { chromium } = require('playwright'); const fs = require('fs'); const zlib = require('zlib');
 const misura = require('./misura.js');
 const [, , shard, tot, nStr, semeS, listaId] = process.argv;
-const MAX_MS = 150 * 60000, inizio = Date.now();
+const MAX_MS = (+process.env.MAX_MIN || 150) * 60000, inizio = Date.now();
 const rngDa = (a) => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let q = Math.imul(a ^ a >>> 15, 1 | a); q = q + Math.imul(q ^ q >>> 7, 61 | q) ^ q; return ((q ^ q >>> 14) >>> 0) / 4294967296; };
 const mescola = (v, rng) => { for (let i = v.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [v[i], v[j]] = [v[j], v[i]]; } return v; };
 const pool = async () => {
@@ -24,7 +24,7 @@ const pool = async () => {
   const out = []; let i = 0;
   const salva = () => fs.writeFileSync('ris-' + shard + '.json.gz', zlib.gzipSync(JSON.stringify(out)));
   const timer = setInterval(salva, 60000);
-  await Promise.all(Array.from({ length: 8 }, async () => {
+  await Promise.all(Array.from({ length: +process.env.PAGINE || 8 }, async () => {
     while (i < miei.length && Date.now() - inizio < MAX_MS) {
       const x = miei[i++], t0 = Date.now(); let r, ctx;
       try {
