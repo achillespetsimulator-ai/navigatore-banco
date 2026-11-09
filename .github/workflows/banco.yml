@@ -1,0 +1,38 @@
+name: banco
+on:
+  workflow_dispatch:
+    inputs:
+      esperimento: { required: true, default: prova }
+      quanti: { required: true, default: '400' }
+      seme: { required: true, default: '20261110' }
+permissions:
+  contents: write
+jobs:
+  banco:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm i playwright && npx playwright install --with-deps chromium
+      - run: xvfb-run -a -s "-screen 0 1280x800x24" node corri.js ${{ inputs.esperimento }} ${{ inputs.quanti }} ${{ matrix.shard }} 20 ${{ inputs.seme }}
+      - uses: actions/upload-artifact@v4
+        with: { name: 'ris-${{ matrix.shard }}', path: 'ris-*.json' }
+  raccogli:
+    needs: banco
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: arte, merge-multiple: true }
+      - run: |
+          mkdir -p risultati
+          node -e "const fs=require('fs');let a=[];for(const f of fs.readdirSync('arte'))a=a.concat(JSON.parse(fs.readFileSync('arte/'+f)));fs.writeFileSync('risultati/${{ github.run_id }}.json',JSON.stringify(a))"
+          git config user.name banco && git config user.email banco@users.noreply.github.com
+          git add risultati && git commit -m "risultati ${{ inputs.esperimento }}" && git pull --rebase && git push
