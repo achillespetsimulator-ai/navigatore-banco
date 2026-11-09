@@ -2,11 +2,14 @@
 const fs = require('fs'), zlib = require('zlib');
 const dir = process.argv[2] || 'arte', uscita = process.argv[3] || 'report.json';
 let S = []; for (const f of fs.readdirSync(dir)) if (f.endsWith('.gz')) S = S.concat(JSON.parse(zlib.gunzipSync(fs.readFileSync(dir + '/' + f))));
+// un sito può aver cambiato il modo in cui la sua pagina trasforma le liste in testo (librerie vecchie): i suoi dati arrivano rovinati e si scartano, contandoli
+const evOk = (v) => Array.isArray(v) && v.every((e) => Array.isArray(e) && typeof e[0] === 'number');
+let rovinati = 0; for (const s of S) { if (s.err) continue; if (!Array.isArray(s.az)) s.az = []; if ((s.vai && (!evOk(s.vai.ev) || !Array.isArray(s.vai.req))) || s.az.some((x) => !evOk(x.ev) || !Array.isArray(x.req))) { s.err = 'dati rovinati dalla pagina'; rovinati++; } }
 const hash = (d) => [...d].reduce((a, c) => (a * 33 + c.charCodeAt(0)) | 0, 5381);
 const q = (v, p) => { if (!v.length) return null; const b = v.slice().sort((x, y) => x - y); return b[Math.floor((b.length - 1) * p)]; };
 const quant = (v) => ({ n: v.length, p25: q(v, .25), p50: q(v, .5), p75: q(v, .75), p90: q(v, .9), p95: q(v, .95), p99: q(v, .99), max: q(v, 1) });
 const ok = S.filter((s) => !s.err && s.stato && s.stato < 400 && s.k && s.k.tot >= 3);
-const R = { siti: S.length, utilizzabili: ok.length, perGruppo: {} };
+const R = { siti: S.length, utilizzabili: ok.length, datiRovinati: rovinati, perGruppo: {} };
 for (const g of ['miei', 'nicchia', 'top', 'medio', 'coda']) { const a = S.filter((s) => s.g === g), b = ok.filter((s) => s.g === g); R.perGruppo[g] = { siti: a.length, utilizzabili: b.length, errori: a.filter((s) => s.err).length, bloccati: a.filter((s) => s.stato >= 400).length, azioni: b.reduce((x, s) => x + s.az.length, 0) }; }
 const errori = {}; for (const s of S) if (s.err) { const k = s.err.replace(/https?:\S+/g, '').slice(0, 40); errori[k] = (errori[k] || 0) + 1; } R.errori = Object.entries(errori).sort((a, b) => b[1] - a[1]).slice(0, 12);
 const stati = {}; for (const s of S) if (s.stato >= 400) stati[s.stato] = (stati[s.stato] || 0) + 1; R.statiErrore = stati;
