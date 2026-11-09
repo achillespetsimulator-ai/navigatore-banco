@@ -1,0 +1,27 @@
+name: analizza
+on:
+  workflow_dispatch:
+    inputs:
+      run: { required: true }
+permissions:
+  contents: write
+  actions: read
+jobs:
+  analizza:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/download-artifact@v4
+        with:
+          path: arte
+          merge-multiple: true
+          run-id: ${{ inputs.run }}
+          github-token: ${{ github.token }}
+      - run: |
+          node --max-old-space-size=12000 analizza.js arte report.json
+          mkdir -p risultati && cp report.json risultati/${{ inputs.run }}.report.json
+          git config user.name banco && git config user.email banco@users.noreply.github.com
+          git add risultati && git commit -m "report ${{ inputs.run }}" && git pull --rebase && git push
