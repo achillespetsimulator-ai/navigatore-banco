@@ -1,0 +1,42 @@
+name: banco2
+on:
+  workflow_dispatch:
+    inputs:
+      n: { required: true, default: '4000' }
+      seme: { required: true, default: '20261109' }
+      lista: { required: true, default: '8P8NV' }
+permissions:
+  contents: write
+jobs:
+  banco:
+    runs-on: ubuntu-latest
+    timeout-minutes: 175
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm i playwright && npx playwright install --with-deps chromium
+      - run: xvfb-run -a -s "-screen 0 1280x800x24" node corri2.js ${{ matrix.shard }} 20 ${{ inputs.n }} ${{ inputs.seme }} ${{ inputs.lista }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: 'ris-${{ matrix.shard }}', path: 'ris-*.json.gz', retention-days: 90 }
+  raccogli:
+    needs: banco
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: actions/download-artifact@v4
+        with: { path: arte, merge-multiple: true }
+      - run: |
+          node --max-old-space-size=12000 analizza.js arte report.json
+          mkdir -p risultati && cp report.json risultati/${{ github.run_id }}.report.json
+          git config user.name banco && git config user.email banco@users.noreply.github.com
+          git add risultati && git commit -m "report ${{ github.run_id }}" && git pull --rebase && git push
