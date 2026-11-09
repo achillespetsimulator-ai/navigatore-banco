@@ -18,18 +18,37 @@ jobs:
             npx playwright install chromium
       - run:
           name: misura
-          no_output_timeout: 20m
+          no_output_timeout: 58m
           command: |
             S=<< parameters.shard >>
-            export PAGINE=$(( S % 2 ? 4 : 8 )) MAX_MIN=3
-            mkdir -p arte
+            export PAGINE=4 MAX_MIN=50
+            mkdir -p arte dati
             ( while sleep 5; do cat /proc/loadavg; done > arte/carico-$S.txt ) &
-            date -u +%s > arte/inizio-$S.txt
             xvfb-run -a -s "-screen 0 1280x800x24" node corri2.js $S 30 4000 20261109 8P8NV || true
-            date -u +%s > arte/fine-$S.txt
-            cp ris-$S.json.gz arte/ || true
+            cp ris-$S.json.gz dati/ || true
       - store_artifacts:
           path: arte
+      - persist_to_workspace:
+          root: .
+          paths: [dati]
+  raccogli:
+    machine:
+      image: ubuntu-2404:current
+    resource_class: large
+    steps:
+      - checkout
+      - attach_workspace:
+          at: .
+      - run:
+          name: analizza
+          no_output_timeout: 50m
+          command: |
+            curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+            sudo apt-get install -y -qq nodejs
+            mkdir -p esito
+            node --max-old-space-size=12000 analizza.js dati esito/report.json
+      - store_artifacts:
+          path: esito
 workflows:
   banco:
     jobs:
@@ -37,3 +56,5 @@ workflows:
           matrix:
             parameters:
               shard: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29]
+      - raccogli:
+          requires: [banco]
