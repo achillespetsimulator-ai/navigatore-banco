@@ -22651,7 +22651,7 @@ var dominio = (u) => {
     return "";
   }
 };
-async function registra(c, url, html, veloce = false) {
+async function registra(c, url, html, veloce = false, daDcl = false) {
   const t0 = Date.now();
   const SECONDI2 = veloce ? SECONDI_V : SECONDI_P;
   const eventi = [];
@@ -22665,7 +22665,7 @@ async function registra(c, url, html, veloce = false) {
     const s = (await c.invia("Target.attachToTarget", { targetId, flatten: true })).sessionId;
     const worker = /* @__PURE__ */ new Set();
     const domande = /* @__PURE__ */ new Map();
-    let caricatore = "", caricata = false;
+    let caricatore = "", caricata = false, dclFatto = false;
     let ultimoTesto = Date.now(), righeViste = 0;
     const pagina = dominio(url);
     togli.push(c.ascolta((m) => {
@@ -22688,7 +22688,9 @@ async function registra(c, url, html, veloce = false) {
         if (p.name === "init" && p.loaderId !== caricatore) {
           caricatore = p.loaderId;
           caricata = false;
+          dclFatto = false;
         } else if ((p.name === "load" || p.name === "networkAlmostIdle") && p.loaderId === caricatore) caricata = true;
+        else if (p.name === "DOMContentLoaded" && p.loaderId === caricatore) dclFatto = true;
       }
       const daWorker = !!(m.sessionId && worker.has(m.sessionId));
       if (m.sessionId !== s && !(daWorker && m.method?.startsWith("Network."))) return;
@@ -22802,7 +22804,7 @@ async function registra(c, url, html, veloce = false) {
           fondo = false;
           h = 0;
         }
-        if (!caricata) {
+        if (!(caricata || daDcl && dclFatto)) {
           await attesa3(50);
           continue;
         }
@@ -23038,7 +23040,7 @@ await Promise.all(Array.from({ length: INSIEME }, async () => {
       try {
         c = await lancia();
         out.chrome = String((await c.invia("Browser.getVersion")).product || "");
-        const lavoro = cosa === "lettore" ? lettore(c, x.u) : cosa === "registro" ? registra(c, x.u, ha("html")) : cosa === "regveloce" ? registra(c, x.u, ha("html"), true) : nuovo(c, x.u, cosa);
+        const lavoro = cosa === "lettore" ? lettore(c, x.u) : cosa === "registro" ? registra(c, x.u, ha("html")) : cosa === "regveloce" ? registra(c, x.u, ha("html"), true) : cosa === "regdcl" ? registra(c, x.u, ha("html"), true, true) : nuovo(c, x.u, cosa);
         out[cosa] = await Promise.race([lavoro, attesa3(SECONDI * 1e3 + 9e4).then(() => ({ errore: "il registratore non ha finito in tempo" }))]);
       } catch (e) {
         out[cosa] = { errore: String(e.message).slice(0, 300) };
@@ -23049,7 +23051,7 @@ await Promise.all(Array.from({ length: INSIEME }, async () => {
     fs.writeFileSync(path.join(USCITA, `${x.n}-${GIRO2}-${INSIEME}.json.gz`), zlib.gzipSync(JSON.stringify(out)));
     fatti++;
     const rr = out.registro, ll = out.lettore;
-    const nv = LETTORI.filter((k2) => k2 !== "lettore" && k2 !== "registro" && k2 !== "regveloce" && out[k2]).map((k2) => ` \xB7 ${k2} ${out[k2].fine || out[k2].errore?.slice(0, 40)} ${out[k2].ms} ms`).join("");
+    const nv = LETTORI.filter((k2) => k2 !== "lettore" && k2 !== "registro" && k2 !== "regveloce" && k2 !== "regdcl" && out[k2]).map((k2) => ` \xB7 ${k2} ${out[k2].fine || out[k2].errore?.slice(0, 40)} ${out[k2].ms} ms`).join("");
     console.log(`${fatti} ${x.n} ${x.u.slice(0, 70)}${nv} \xB7 lettore ${ll ? `${ll.fine || ll.errore?.slice(0, 40)} ${ll.ms} ms ${ll.corpo?.length ?? 0} car` : "-"} \xB7 registro ${rr ? rr.errore ? rr.errore.slice(0, 60) : `${rr.eventi?.length} eventi, innerText ${rr.finale?.innerText?.length ?? "?"}` : "-"}`);
   }
 }));
