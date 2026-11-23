@@ -22315,7 +22315,7 @@ async function leggiNuovo(c, url, o) {
   try {
     const { targetId } = await c.invia("Target.createTarget", { url: "about:blank", browserContextId });
     const s = (await c.invia("Target.attachToTarget", { targetId, flatten: true })).sessionId;
-    let stato = null, rifiuto = false, caricatore = "", documenti = 0, urlMostrato = url;
+    let stato = null, rifiuto = false, caricatore = "", documenti = 0, urlMostrato = url, quasiFerma = false;
     const lavori = /* @__PURE__ */ new Map();
     let occupatoFino = 0;
     const risposto = (w) => {
@@ -22344,7 +22344,9 @@ async function leggiNuovo(c, url, o) {
       if (m.method === "Page.lifecycleEvent" && p.frameId === targetId && p.name === "init" && p.loaderId !== caricatore) {
         caricatore = p.loaderId;
         documenti++;
-      } else if (m.method === "Page.frameNavigated" && p.frame?.id === targetId) urlMostrato = p.frame.url;
+        quasiFerma = false;
+      } else if (m.method === "Page.lifecycleEvent" && p.frameId === targetId && p.name === "networkAlmostIdle" && p.loaderId === caricatore) quasiFerma = true;
+      else if (m.method === "Page.frameNavigated" && p.frame?.id === targetId) urlMostrato = p.frame.url;
       else if (m.method === "Fetch.requestPaused") {
         if (p.responseStatusCode !== void 0 || p.responseErrorReason !== void 0) {
           if (p.resourceType === "Document" && p.frameId === targetId && p.responseStatusCode !== void 0 && !(p.responseStatusCode >= 300 && p.responseStatusCode < 400)) {
@@ -22414,7 +22416,8 @@ async function leggiNuovo(c, url, o) {
       }
       if (doc !== caricatore) continue;
       ultimo = st;
-      const pronto = o.modo === "veloce" ? st.carico : st.dcl;
+      const caricata = st.carico || quasiFerma;
+      const pronto = o.modo === "veloce" ? caricata : st.dcl;
       const pausa = o.modo.startsWith("passo") ? Number(o.modo.slice(5)) : 0;
       if (pronto && !fondo) {
         tempi.scorre ??= Date.now() - t0;
@@ -22467,7 +22470,7 @@ async function leggiNuovo(c, url, o) {
           h = hh;
           continue;
         }
-        if (st.carico && st.coppie > 0 && st.calma >= CALMA && Date.now() - occupatoFino >= CALMA) {
+        if (caricata && st.coppie > 0 && st.calma >= CALMA && Date.now() - occupatoFino >= CALMA) {
           fine = "finita";
           break;
         }
