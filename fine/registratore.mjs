@@ -22202,7 +22202,7 @@ var STATO = `(() => {
     const SALTA = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|SVG|MATH|IFRAME|CANVAS|VIDEO|AUDIO|OBJECT)$/i;
     const PAROLA = /[\\p{L}\\p{N}]+/gu;
     const viste = new Set(), coppie = new Set(), osservate = new WeakSet(), tolti = [], tolte = new Set();
-    let sporco = true, ultimoTesto = 0, ultimaAzione = 0, fineLoaf = 0, costo = 0;
+    let sporco = true, ultimoTesto = 0, ultimaAzione = 0, fineLoaf = 0, costo = 0, ultimoGiro = -1e9, daTogliere = [];
     // il testo a blocchi (come il registro del registratore), anche dentro le shadow root aperte, che si osservano quando si trovano
     const righe = (radice, osserva) => {
       const out = []; let cur = '';
@@ -22223,17 +22223,22 @@ var STATO = `(() => {
       chiudi();
       return out;
     };
-    // il testo tolto dalla pagina, dal load (prima toglie solo testo di passaggio): apri lo consegna in fondo
+    // il testo tolto dalla pagina, dal load (prima toglie solo testo di passaggio): apri lo consegna in fondo. Qui si
+    // ricordano solo gli elementi tolti; il loro testo si legge al giro dopo (sotto, in stato), fuori dal lavoro della
+    // pagina, e non si legge se nel frattempo sono stati rimessi (spostati, non tolti)
     const mo = new MutationObserver((ms) => {
       sporco = true;
       if (document.readyState !== 'complete') return;
-      for (const m of ms) for (const x of m.removedNodes) {
-        if (x.nodeType !== 1 && x.nodeType !== 3) continue;
-        if (x.nodeType === 1 && SALTA.test(x.tagName)) continue;
+      for (const m of ms) for (const x of m.removedNodes) if ((x.nodeType === 1 && !SALTA.test(x.tagName)) || x.nodeType === 3) daTogliere.push(x);
+    });
+    const togliTesto = () => {
+      const l = daTogliere; daTogliere = [];
+      for (const x of l) {
+        if (x.isConnected) continue;
         const t = righe(x).join('\\n');
         if (t && !tolte.has(t)) { tolte.add(t); tolti.push(t.slice(0, 20000)); }
       }
-    });
+    };
     const osserva = (r) => { if (osservate.has(r)) return; osservate.add(r); mo.observe(r, { childList: true, subtree: true, characterData: true }); };
     osserva(document);
     let po = null;
@@ -22241,7 +22246,9 @@ var STATO = `(() => {
     try { po = new PerformanceObserver((l) => loaf(l.getEntries())); po.observe({ type: 'long-animation-frame', buffered: true }); } catch (e) {}
     const guarda = () => {
       const t = performance.now();
+      ultimoGiro = t;
       sporco = false;
+      togliTesto();
       let nuovo = false;
       for (const s of righe(document.body || document.documentElement, osserva)) {
         if (viste.has(s)) continue;
@@ -22255,14 +22262,19 @@ var STATO = `(() => {
     };
     n = {
       azione: () => { ultimaAzione = performance.now(); },
-      tolti: () => tolti,
+      tolti: () => { togliTesto(); return tolti; },
       stato: () => {
-        if (sporco && (document.body || document.documentElement)) guarda();
+        // il registro non deve pesare sulla pagina: si guarda al pi\xF9 ogni 10 volte quanto \xE8 costato guardare l'ultima
+        // volta; finch\xE9 la pagina \xE8 cambiata e non si \xE8 guardato, non \xE8 calma
+        let nonGuardata = false;
+        if (sporco && (document.body || document.documentElement)) {
+          if (performance.now() - ultimoGiro >= 10 * costo) guarda(); else nonGuardata = true;
+        }
         if (po) loaf(po.takeRecords());
         const nav = performance.getEntriesByType('navigation')[0] || {};
         const ora = performance.now();
         const ultimo = Math.max(ultimoTesto, ultimaAzione, fineLoaf, nav.domContentLoadedEventEnd || 0, nav.loadEventEnd || 0);
-        return { calma: Math.round(ora - ultimo), testo: Math.round(ora - ultimoTesto), carico: document.readyState === 'complete', coppie: coppie.size, costo: Math.round(costo), dcl: document.readyState !== 'loading' };
+        return { calma: nonGuardata ? 0 : Math.round(ora - ultimo), testo: Math.round(ora - ultimoTesto), carico: document.readyState === 'complete', coppie: coppie.size, costo: Math.round(costo), dcl: document.readyState !== 'loading' };
       },
     };
     Object.defineProperty(window, K, { value: n, enumerable: false, configurable: true });
@@ -22365,10 +22377,11 @@ async function leggiNuovo(c, url, o) {
     ]);
     const resta = () => o.tetto - (Date.now() - t0);
     let sorda = false;
-    const valuta = async (expression, ms = Math.max(3e3, Math.min(1e4, resta()))) => {
+    const valuta = async (expression, ms = Math.max(1e3, Math.min(1e4, resta()))) => {
       let r2;
       try {
         r2 = await c.invia("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, s, ms);
+        sorda = false;
       } catch (e) {
         if (/^Chrome non ha risposto/.test(e.message)) sorda = true;
         throw e;
@@ -22385,7 +22398,7 @@ async function leggiNuovo(c, url, o) {
     if (rifiuto) return fatto("rifiuto");
     if (nav.errorText) return fatto("errore", { errore: nav.errorText });
     let doc = caricatore, fondo = false, scosso = false, h = 0, passi = 0, fine = "tetto", ultimo = null;
-    while (resta() > 0 && !sorda && !rifiuto) {
+    while (resta() > 0 && !rifiuto) {
       if (doc !== caricatore) {
         doc = caricatore;
         fondo = scosso = false;
@@ -22396,8 +22409,7 @@ async function leggiNuovo(c, url, o) {
       try {
         st = await valuta(STATO);
       } catch {
-        if (sorda) break;
-        await attesa2(100);
+        if (!sorda) await attesa2(100);
         continue;
       }
       if (doc !== caricatore) continue;
@@ -22882,8 +22894,15 @@ async function nuovo(c, url, modo) {
       } catch {
       }
     }
+    let corpo = "";
+    if (l.html && !righeReg.length) {
+      try {
+        corpo = daHTML(l.html, l.url || url, "pagina").corpo;
+      } catch {
+      }
+    }
     const { html, ...resto } = l;
-    return { t0, ms: Date.now() - t0, ...resto, righeReg, car: html ? html.length : 0 };
+    return { t0, ms: Date.now() - t0, ...resto, righeReg, corpo, car: html ? html.length : 0 };
   } catch (e) {
     return { t0, ms: Date.now() - t0, errore: String(e.message).slice(0, 300) };
   }
