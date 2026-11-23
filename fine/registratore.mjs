@@ -11941,13 +11941,13 @@ async function leggiConChrome(c, url, o) {
       };
       if (ogni) g = setInterval(() => sveglia(), ogni);
     });
-    let passi = 0, altezza = 0, hVista = 0, fine = "tetto", scorso = "", inFondo = false;
+    let passi = 0, altezza = 0, hVista = 0, fine = "tetto", scorso = "", inFondo = false, giaInFondo = false;
     while (resta() > 0) {
       if (!await aspetta(() => pronto || reteFerma(Date.now()), GIRO)) break;
       if (fermo) return fatto(fermo);
       if (scorso !== caricatore) {
         scorso = caricatore;
-        inFondo = false;
+        inFondo = giaInFondo = false;
         altezza = hVista = 0;
         tempi.caricata = Date.now() - t0;
       }
@@ -11967,7 +11967,7 @@ async function leggiConChrome(c, url, o) {
         tempi.allungata = Date.now() - t0;
       }
       hVista = Math.max(hVista, st.h);
-      if (st.car >= BASTA && (!inFondo || st.h > altezza + 1)) tempi.basta ??= Date.now() - t0;
+      if (giaInFondo && st.car >= BASTA && (!inFondo || st.h > altezza + 1)) tempi.basta ??= Date.now() - t0;
       else if (!inFondo || st.h > altezza + 1) {
         const r2 = await valuta(PASSATA(Math.max(100, Math.min(1e3, resta() - 500)))).catch(() => null);
         if (!r2 || r2.vuota) {
@@ -11977,6 +11977,7 @@ async function leggiConChrome(c, url, o) {
         passi += r2.passi;
         altezza = r2.h;
         inFondo = r2.fondo;
+        if (inFondo) giaInFondo = true;
         hVista = Math.max(hVista, r2.h);
         if (inFondo) tempi.scorsa ??= Date.now() - t0;
         continue;
