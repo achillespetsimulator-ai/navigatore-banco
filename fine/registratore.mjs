@@ -22503,7 +22503,9 @@ var ha = (n) => process.argv.includes(`--${n}`);
 var CHROME = arg("chrome", "/opt/chrome/chrome");
 var USCITA = arg("uscita", "reg");
 var INSIEME = Number(arg("insieme", "8"));
-var SECONDI = Number(arg("secondi", "40"));
+var SECONDI_P = Number(arg("secondi", "40"));
+var SECONDI_V = Number(arg("secondiVeloce", "20"));
+var SECONDI = SECONDI_P;
 var GIRO2 = Number(arg("giro", "1"));
 var SOLO = arg("solo");
 var urls = fs.readFileSync(arg("lista"), "utf8").split("\n").map((s) => s.trim()).filter((s) => s && !s.startsWith("#"));
@@ -22624,6 +22626,23 @@ var SU2 = `(async () => {
   const se = document.scrollingElement || document.documentElement;
   return { h: se ? se.scrollHeight : 0 };
 })()`;
+var RIQUADRO2 = `[...document.querySelectorAll('body *')].filter((e) => e.scrollHeight > e.clientHeight + 50 && e.clientHeight > 200 && /auto|scroll|overlay/.test(getComputedStyle(e).overflowY)).sort((a, b) => b.clientHeight * b.clientWidth - a.clientHeight * a.clientWidth)[0]`;
+var PASSO_V = `(async () => {
+  ${FOTOGRAMMI}
+  const se = document.scrollingElement || document.documentElement;
+  if (!document.body || !se) return { vuota: true };
+  const r = ${RIQUADRO2};
+  const pos = () => [Math.round(scrollY), r ? Math.round(r.scrollTop) : 0];
+  const inFondo = () => scrollY + innerHeight >= se.scrollHeight - 5 && (!r || r.scrollTop + r.clientHeight >= r.scrollHeight - 5);
+  const liscio = [document.documentElement, document.body].some((e) => getComputedStyle(e).scrollBehavior === 'smooth') || (r ? getComputedStyle(r).scrollBehavior === 'smooth' : false);
+  if (inFondo()) return { y: pos()[0], ry: pos()[1], h: se.scrollHeight, rh: r ? r.scrollHeight : 0, fondo: true, mosso: false, liscio, giaTutta: true };
+  const a = pos();
+  scrollBy({ top: innerHeight, behavior: 'instant' }); if (r) r.scrollBy({ top: r.clientHeight, behavior: 'instant' });
+  await fotogrammi();
+  const b = pos();
+  return { y: b[0], ry: b[1], h: se.scrollHeight, rh: r ? r.scrollHeight : 0, fondo: inFondo(), mosso: a[0] !== b[0] || a[1] !== b[1], liscio };
+})()`;
+var ALTEZZA_V = `(() => { const se = document.scrollingElement || document.documentElement; const r = ${RIQUADRO2}; return (se ? se.scrollHeight : 0) + (r ? r.scrollHeight : 0); })()`;
 var attesa3 = (ms) => new Promise((ok) => setTimeout(ok, ms));
 var dominio = (u) => {
   try {
@@ -22632,8 +22651,9 @@ var dominio = (u) => {
     return "";
   }
 };
-async function registra(c, url, html) {
+async function registra(c, url, html, veloce = false) {
   const t0 = Date.now();
+  const SECONDI2 = veloce ? SECONDI_V : SECONDI_P;
   const eventi = [];
   const ev = (k, v2, t = Date.now()) => eventi.push([k, t, v2]);
   const v = await c.invia("Browser.getVersion");
@@ -22644,6 +22664,8 @@ async function registra(c, url, html) {
     const { targetId } = await c.invia("Target.createTarget", { url: "about:blank", browserContextId });
     const s = (await c.invia("Target.attachToTarget", { targetId, flatten: true })).sessionId;
     const worker = /* @__PURE__ */ new Set();
+    const domande = /* @__PURE__ */ new Map();
+    let caricatore = "", caricata = false;
     let ultimoTesto = Date.now(), righeViste = 0;
     const pagina = dominio(url);
     togli.push(c.ascolta((m) => {
@@ -22656,7 +22678,18 @@ async function registra(c, url, html) {
           });
         }
       }
-      if (m.method === "Target.detachedFromTarget" && m.sessionId === s) worker.delete(p.sessionId);
+      if (m.method === "Target.detachedFromTarget" && m.sessionId === s) {
+        worker.delete(p.sessionId);
+        const da = domande.get(p.sessionId);
+        if (da) ev("wq", [p.sessionId.slice(0, 8), da, Date.now(), "staccato"]);
+        domande.delete(p.sessionId);
+      }
+      if (m.method === "Page.lifecycleEvent" && m.sessionId === s && p.frameId === targetId) {
+        if (p.name === "init" && p.loaderId !== caricatore) {
+          caricatore = p.loaderId;
+          caricata = false;
+        } else if ((p.name === "load" || p.name === "networkAlmostIdle") && p.loaderId === caricatore) caricata = true;
+      }
       const daWorker = !!(m.sessionId && worker.has(m.sessionId));
       if (m.sessionId !== s && !(daWorker && m.method?.startsWith("Network."))) return;
       switch (m.method) {
@@ -22710,7 +22743,7 @@ async function registra(c, url, html) {
       c.invia("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, s),
       c.invia("Page.addScriptToEvaluateOnNewDocument", { source: REGISTRO }, s)
     ]);
-    const fine = t0 + SECONDI * 1e3;
+    const fine = t0 + SECONDI2 * 1e3;
     const resta = () => fine - Date.now();
     const valuta = async (expression, ms = 8e3) => {
       const r = await c.invia("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, s, Math.max(1e3, Math.min(ms, resta() + 2e3)));
@@ -22750,6 +22783,88 @@ async function registra(c, url, html) {
     const nav = await c.invia("Page.navigate", { url }, s, 3e4).catch((e) => ({ errorText: String(e.message) }));
     ev("navigate", nav.errorText ? { errore: nav.errorText } : {});
     if (nav.errorText) return { t0, eventi, errore: nav.errorText };
+    if (veloce) {
+      let doc = "", fondo = false, h = 0, passi2 = 0;
+      while (resta() > 0) {
+        const ora = Date.now();
+        for (const w of worker) {
+          const da = domande.get(w);
+          if (da) continue;
+          domande.set(w, ora);
+          c.invia("Runtime.evaluate", { expression: "0", returnByValue: true }, w, 6e4).then(() => {
+            const x = domande.get(w);
+            if (x && Date.now() - x > 100) ev("wq", [w.slice(0, 8), x, Date.now()]);
+            domande.delete(w);
+          }, () => domande.delete(w));
+        }
+        if (doc !== caricatore) {
+          doc = caricatore;
+          fondo = false;
+          h = 0;
+        }
+        if (!caricata) {
+          await attesa3(50);
+          continue;
+        }
+        if (!fondo) {
+          let r = null;
+          try {
+            r = await valuta(PASSO_V, 1e4);
+          } catch (e) {
+            ev("sorda", String(e.message).slice(0, 100));
+            continue;
+          }
+          passi2++;
+          ev("passo", r);
+          if (r.vuota) {
+            await attesa3(250);
+            continue;
+          }
+          h = r.h + r.rh;
+          if (r.fondo) {
+            fondo = true;
+            ev("fondo", { h, volta: 1 });
+          }
+          continue;
+        }
+        await attesa3(250);
+        try {
+          const hh = await valuta(ALTEZZA_V, 1e4);
+          if (typeof hh === "number" && hh > h + 1) {
+            fondo = false;
+            ev("cresce", { h: hh });
+          }
+        } catch {
+        }
+      }
+      for (const [w, da] of domande) ev("wq", [w.slice(0, 8), da, null]);
+      attivo = false;
+      await svuotatore;
+      ev("fine", { fase: fondo ? "in fondo" : "scorreva", passi: passi2 });
+      const finale2 = {};
+      try {
+        await valuta("window.__navGuarda && window.__navGuarda('fine')", 15e3);
+      } catch {
+      }
+      await svuota();
+      try {
+        finale2.righe = await valuta("window.__navRighe ? window.__navRighe() : null", 15e3);
+        finale2.tolti = await valuta("window.__navTolti || []", 15e3);
+      } catch {
+      }
+      if (html) {
+        try {
+          finale2.html = (await valuta(HTML, 15e3)).html;
+        } catch {
+        }
+      }
+      try {
+        finale2.url = await valuta("location.href");
+        finale2.titolo = await valuta("document.title");
+      } catch {
+      }
+      return { t0, eventi, finale: finale2 };
+    }
     const dcl = Date.now();
     while (Date.now() - dcl < 3e3 && !eventi.some((e) => e[0] === "ciclo" && e[2][0] === "DOMContentLoaded")) await attesa3(50);
     let passi = 0, sorde = 0, inFondo = 0;
@@ -22923,7 +23038,7 @@ await Promise.all(Array.from({ length: INSIEME }, async () => {
       try {
         c = await lancia();
         out.chrome = String((await c.invia("Browser.getVersion")).product || "");
-        const lavoro = cosa === "lettore" ? lettore(c, x.u) : cosa === "registro" ? registra(c, x.u, ha("html")) : nuovo(c, x.u, cosa);
+        const lavoro = cosa === "lettore" ? lettore(c, x.u) : cosa === "registro" ? registra(c, x.u, ha("html")) : cosa === "regveloce" ? registra(c, x.u, ha("html"), true) : nuovo(c, x.u, cosa);
         out[cosa] = await Promise.race([lavoro, attesa3(SECONDI * 1e3 + 9e4).then(() => ({ errore: "il registratore non ha finito in tempo" }))]);
       } catch (e) {
         out[cosa] = { errore: String(e.message).slice(0, 300) };
@@ -22934,7 +23049,7 @@ await Promise.all(Array.from({ length: INSIEME }, async () => {
     fs.writeFileSync(path.join(USCITA, `${x.n}-${GIRO2}-${INSIEME}.json.gz`), zlib.gzipSync(JSON.stringify(out)));
     fatti++;
     const rr = out.registro, ll = out.lettore;
-    const nv = LETTORI.filter((k2) => k2 !== "lettore" && k2 !== "registro" && out[k2]).map((k2) => ` \xB7 ${k2} ${out[k2].fine || out[k2].errore?.slice(0, 40)} ${out[k2].ms} ms`).join("");
+    const nv = LETTORI.filter((k2) => k2 !== "lettore" && k2 !== "registro" && k2 !== "regveloce" && out[k2]).map((k2) => ` \xB7 ${k2} ${out[k2].fine || out[k2].errore?.slice(0, 40)} ${out[k2].ms} ms`).join("");
     console.log(`${fatti} ${x.n} ${x.u.slice(0, 70)}${nv} \xB7 lettore ${ll ? `${ll.fine || ll.errore?.slice(0, 40)} ${ll.ms} ms ${ll.corpo?.length ?? 0} car` : "-"} \xB7 registro ${rr ? rr.errore ? rr.errore.slice(0, 60) : `${rr.eventi?.length} eventi, innerText ${rr.finale?.innerText?.length ?? "?"}` : "-"}`);
   }
 }));
