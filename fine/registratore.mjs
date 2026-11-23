@@ -22403,6 +22403,7 @@ async function leggiNuovo(c, url, o) {
       if (doc !== caricatore) continue;
       ultimo = st;
       const pronto = o.modo === "veloce" ? st.carico : st.dcl;
+      const pausa = o.modo.startsWith("passo") ? Number(o.modo.slice(5)) : 0;
       if (pronto && !fondo) {
         tempi.scorre ??= Date.now() - t0;
         for (; ; ) {
@@ -22415,6 +22416,7 @@ async function leggiNuovo(c, url, o) {
           if (r2.vuota) break;
           passi++;
           h = r2.h;
+          if (pausa) await attesa2(pausa);
           if (o.modo === "paziente") {
             const a = Date.now();
             while (Date.now() - a < 2e3 && resta() > 0) {
@@ -22910,7 +22912,7 @@ await Promise.all(Array.from({ length: INSIEME }, async () => {
     fs.writeFileSync(path.join(USCITA, `${x.n}-${GIRO2}-${INSIEME}.json.gz`), zlib.gzipSync(JSON.stringify(out)));
     fatti++;
     const rr = out.registro, ll = out.lettore;
-    const nv = ["veloce", "paziente"].filter((k2) => out[k2]).map((k2) => ` \xB7 ${k2} ${out[k2].fine || out[k2].errore?.slice(0, 40)} ${out[k2].ms} ms`).join("");
+    const nv = LETTORI.filter((k2) => k2 !== "lettore" && k2 !== "registro" && out[k2]).map((k2) => ` \xB7 ${k2} ${out[k2].fine || out[k2].errore?.slice(0, 40)} ${out[k2].ms} ms`).join("");
     console.log(`${fatti} ${x.n} ${x.u.slice(0, 70)}${nv} \xB7 lettore ${ll ? `${ll.fine || ll.errore?.slice(0, 40)} ${ll.ms} ms ${ll.corpo?.length ?? 0} car` : "-"} \xB7 registro ${rr ? rr.errore ? rr.errore.slice(0, 60) : `${rr.eventi?.length} eventi, innerText ${rr.finale?.innerText?.length ?? "?"}` : "-"}`);
   }
 }));
