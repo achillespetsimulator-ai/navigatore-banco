@@ -11,6 +11,7 @@ on:
       secondi: { description: "secondi di lettura paziente per pagina", required: true, default: "40" }
       html: { description: "si = salva anche l'HTML finale (per il convertitore)", required: true, default: "no" }
       gruppi: { description: "0 = letture normali; G = le chiamate vere a gruppi di G (vecchio e nuovo a turno)", required: true, default: "0" }
+      versioni: { description: "con gruppi: le due letture da confrontare (vecchio, nuovo, nuovo1)", required: true, default: "vecchio,nuovo" }
       lettori: { description: "le letture per pagina: lettore (apri di oggi), veloce e paziente (il lettore nuovo), registro (riferimento)", required: true, default: "lettore,registro" }
 permissions:
   contents: read
@@ -41,7 +42,7 @@ jobs:
         run: |
           node fine/registratore.mjs --chrome /opt/chrome/chrome --lista "${{ inputs.lista }}" --uscita out \
             --insieme "${{ inputs.insieme }}" --giro "${{ inputs.giro }}" --secondi "${{ inputs.secondi }}" \
-            --parte "${{ matrix.parte }}/20" --elenco /tmp/hosts.txt --lettori "${{ inputs.lettori }}" $( [ "${{ inputs.gruppi }}" != "0" ] && echo --gruppi ${{ inputs.gruppi }} ) ${{ inputs.html == 'si' && '--html' || '' }}
+            --parte "${{ matrix.parte }}/20" --elenco /tmp/hosts.txt --lettori "${{ inputs.lettori }}" $( [ "${{ inputs.gruppi }}" != "0" ] && echo --gruppi ${{ inputs.gruppi }} --versioni ${{ inputs.versioni }} ) ${{ inputs.html == 'si' && '--html' || '' }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

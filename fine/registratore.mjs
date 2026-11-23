@@ -11679,8 +11679,14 @@ var REGISTRO = `(() => {
   Object.defineProperty(window, K, { value: n, enumerable: false, configurable: true });
   return n.stato();
 })()`;
-var PASSATA = (ms) => `(async () => {
-  ${FOTOGRAMMI}
+var UN_FOTOGRAMMA = `let senzaDisegno = false;
+  const fotogrammi = () => new Promise((ok) => {
+    if (senzaDisegno) return ok(0);
+    const t = setTimeout(() => { senzaDisegno = true; ok(0); }, 500);
+    requestAnimationFrame(() => { const c = new MessageChannel(); c.port1.onmessage = () => { clearTimeout(t); ok(1); }; c.port2.postMessage(0); });
+  });`;
+var PASSATA = (ms, uno = false) => `(async () => {
+  ${uno ? UN_FOTOGRAMMA : FOTOGRAMMI}
   const n = window.__navLettore;
   const se = document.scrollingElement || document.documentElement;
   if (!document.body || !se) return { vuota: true };
@@ -11970,7 +11976,7 @@ async function leggiConChrome(c, url, o) {
       hVista = Math.max(hVista, st.h);
       if (giaInFondo && st.car >= basta && (!inFondo || st.h > altezza + 1)) tempi.basta ??= Date.now() - t0;
       else if (!inFondo || st.h > altezza + 1) {
-        const r2 = await valuta(PASSATA(Math.max(100, Math.min(1e3, resta() - 500)))).catch(() => null);
+        const r2 = await valuta(PASSATA(Math.max(100, Math.min(1e3, resta() - 500)), o.passo === "uno")).catch(() => null);
         if (!r2 || r2.vuota) {
           if (!sorda) await attesa(GIRO);
           continue;
@@ -22291,7 +22297,8 @@ function completa(doc, l, chiesto, righe) {
   const t = aggiungiTolti(doc, l.tolti || []);
   if (t) info.push(`In fondo, sotto \xAB${TOLTI}\xBB, ${t === 1 ? "un pezzo" : `${t} pezzi`} di testo che la pagina ha tolto mentre si scorreva.`);
   const secondi = Math.round((l.tempi.finita || 0) / 1e3);
-  if (l.cresceva) info.push(`\u26A0 La pagina continua: in ${secondi} s si \xE8 allungata ${l.tempi.passate === 1 ? "una volta" : `${l.tempi.passate || 0} volte`} scorrendo e si allungava ancora (un elenco che non finisce). Qui c'\xE8 quello che ha caricato fin l\xEC.`);
+  if (l.cresceva && l.tempi.basta !== void 0) info.push(`(La pagina si allungava ancora scorrendo: non si \xE8 scorsa oltre, perch\xE9 il testo raccolto era gi\xE0 pi\xF9 di quello che questa risposta mostra. Per leggerne di pi\xF9 si apre di nuovo con max_caratteri pi\xF9 grande.)`);
+  else if (l.cresceva) info.push(`\u26A0 La pagina continua: in ${secondi} s si \xE8 allungata ${l.tempi.passate === 1 ? "una volta" : `${l.tempi.passate || 0} volte`} scorrendo e si allungava ancora (un elenco che non finisce). Qui c'\xE8 quello che ha caricato fin l\xEC.`);
   else if (l.fine === "tetto") info.push(`\u26A0 Dopo ${secondi} s la pagina caricava ancora: il testo \xE8 quello di quel momento, e una parte potrebbe mancare.`);
   doc.info = info;
   return doc;
@@ -23431,10 +23438,10 @@ function righeComeRegistro(html) {
   chiudi();
   return out;
 }
-async function lettore(c, url, vecchio = false, basta) {
+async function lettore(c, url, vecchio = false, basta, passo) {
   const t0 = Date.now();
   try {
-    const l = await (vecchio ? leggiConChrome2 : leggiConChrome)(c, url, { tetto: 2e4, fermatiAlRifiuto: true, basta });
+    const l = await (vecchio ? leggiConChrome2 : leggiConChrome)(c, url, { tetto: 2e4, fermatiAlRifiuto: true, basta, passo });
     let corpo = "";
     if (l.fine !== "file" && l.fine !== "rifiuto" && l.html) {
       const doc = daHTML(l.html, l.url, "pagina", l.originale);
@@ -23492,6 +23499,7 @@ if (ha("gruppi")) {
   for (let i = 0; i < mie.length; i += G) {
     const gruppo = mie.slice(i, i + G);
     const out = gruppo.map((x) => ({ url: x.u, n: x.n, giro: GIRO3, gruppo: G, ora: (/* @__PURE__ */ new Date()).toISOString() }));
+    const [va, vb] = arg("versioni", "vecchio,nuovo").split(",");
     const ordine = (i / G + GIRO3) % 2 ? ["nuovo", "vecchio"] : ["vecchio", "nuovo"];
     const tempi = {};
     for (const v of ordine) {
@@ -23503,7 +23511,8 @@ if (ha("gruppi")) {
           c = await lancia();
           const avvio = Date.now() - a;
           const basta = G === 1 ? 25e3 : Math.max(8e3, Math.floor(6e4 / G));
-          const r = await Promise.race([lettore(c, x.u, v === "vecchio", basta), attesa4(9e4).then(() => ({ errore: "non ha finito in tempo" }))]);
+          const quale = v === "vecchio" ? va : vb;
+          const r = await Promise.race([lettore(c, x.u, quale === "vecchio", basta, quale === "nuovo1" ? "uno" : "due"), attesa4(9e4).then(() => ({ errore: "non ha finito in tempo" }))]);
           return { ...r, avvio, pronta: Date.now() - a };
         } catch (e) {
           return { errore: String(e.message).slice(0, 300), pronta: Date.now() - a };
@@ -23516,6 +23525,7 @@ if (ha("gruppi")) {
     }
     for (const o of out) {
       o.chiamata = tempi;
+      o.versioni = [va, vb];
       fs.writeFileSync(path.join(USCITA, `${o.n}-${GIRO3}-g${G}.json.gz`), zlib.gzipSync(JSON.stringify(o)));
     }
     console.log(`gruppo ${i / G} (${gruppo.length}): vecchio ${tempi.vecchio} ms, nuovo ${tempi.nuovo} ms`);
