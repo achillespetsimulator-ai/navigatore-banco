@@ -11591,8 +11591,9 @@ var HTML_DICHIARATO = /html|xhtml/i;
 var SEMBRA_HTML = (b) => /^\s*(<!doctype html|<html|<head|<body)/i.test(b.subarray(0, 1024).toString("utf8").replace(/^\uFEFF/, ""));
 var attesa = (ms) => new Promise((ok) => setTimeout(ok, ms));
 var CALMA = 1e3;
-var DATI_IN_VOLO = 3e3;
-var DOPO_I_DATI = 500;
+var RETE_APERTA = 3e3;
+var RETE_FERMA = 500;
+var BASTA = 8e4;
 var GIRO = 250;
 var FOTOGRAMMI = `let senzaDisegno = false;
   const fotogrammi = () => new Promise((ok) => {
@@ -11606,7 +11607,7 @@ var REGISTRO = `(() => {
   const BLOCCO = /^(ADDRESS|ARTICLE|ASIDE|BLOCKQUOTE|BR|CAPTION|DD|DETAILS|DIALOG|DIV|DL|DT|FIELDSET|FIGCAPTION|FIGURE|FOOTER|FORM|H[1-6]|HEADER|HR|LEGEND|LI|MAIN|NAV|OL|OPTION|P|PRE|SECTION|SUMMARY|TABLE|TBODY|TD|TFOOT|TH|THEAD|TR|UL|BUTTON|LABEL)$/;
   const SALTA = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|SVG|MATH|IFRAME|CANVAS|VIDEO|AUDIO|OBJECT)$/;
   const viste = new Set(), osservate = new WeakSet(), tolte = new Set(), tolti = [];
-  let sporco = true, ultimoTesto = 0, ultimaAzione = 0, fineLoaf = 0, costo = 0, ultimoGiro = -1e9, testo = false, daTogliere = [];
+  let sporco = true, ultimoTesto = 0, ultimaAzione = 0, fineLoaf = 0, costo = 0, ultimoGiro = -1e9, testo = false, car = 0, caTolti = 0, daTogliere = [];
   const righe = (radice, osserva, fuori) => {
     let cur = '';
     const chiudi = () => { const t = cur.replace(/\\s+/g, ' ').trim(); cur = ''; if (t) fuori(t); };
@@ -11638,7 +11639,7 @@ var REGISTRO = `(() => {
       if (x.isConnected) continue;
       const pezzi = []; righe(x, null, (t) => pezzi.push(t));
       const t = pezzi.join('\\n');
-      if (t && !tolte.has(t)) { tolte.add(t); tolti.push(t); }
+      if (t && !tolte.has(t)) { tolte.add(t); tolti.push(t); caTolti += t.length; }
     }
   };
   let po = null;
@@ -11648,13 +11649,16 @@ var REGISTRO = `(() => {
     const t = performance.now();
     ultimoGiro = t; sporco = false;
     togliTesto();
-    let nuovo = false;
+    let nuovo = false, ora = 0;
     righe(document.body || document.documentElement, osserva, (r) => {
       if (!testo && /\\p{L}/u.test(r)) testo = true;
-      const k = r.replace(/\\d+/g, '#');
+      const k = r.replace(/\\p{Nd}+/gu, '#');
+      ora += r.length;
       if (!viste.has(k)) { viste.add(k); nuovo = true; }
     });
     if (nuovo) ultimoTesto = performance.now();
+    // il testo raccolto: quello che c'\xE8 ora nella pagina pi\xF9 quello che ha tolto
+    car = ora + caTolti;
     costo = performance.now() - t;
   };
   const n = {
@@ -11669,7 +11673,7 @@ var REGISTRO = `(() => {
       const se = document.scrollingElement || document.documentElement;
       const r = n.riquadro && n.riquadro.isConnected ? n.riquadro : null;
       const ultimo = Math.max(ultimoTesto, ultimaAzione, fineLoaf, nav.domContentLoadedEventEnd || 0, nav.loadEventEnd || 0);
-      return { calma: guardata ? Math.round(performance.now() - ultimo) : 0, testo, h: (se ? se.scrollHeight : 0) + (r ? r.scrollHeight : 0) };
+      return { calma: guardata ? Math.round(performance.now() - ultimo) : 0, testo, car, h: (se ? se.scrollHeight : 0) + (r ? r.scrollHeight : 0) };
     },
   };
   Object.defineProperty(window, K, { value: n, enumerable: false, configurable: true });
@@ -11757,25 +11761,27 @@ async function leggiConChrome(c, url, o) {
     const { targetId } = await c.invia("Target.createTarget", { url: "about:blank", browserContextId });
     const s = (await c.invia("Target.attachToTarget", { targetId, flatten: true })).sessionId;
     const worker = /* @__PURE__ */ new Set();
-    const datiInVolo = /* @__PURE__ */ new Map();
-    let ultimoDato = 0;
+    const inCorso = /* @__PURE__ */ new Map();
+    let ultimaRete = Date.now();
+    const reteFerma = (ora) => ora - ultimaRete >= RETE_FERMA && ![...inCorso.values()].some((da) => ora - da < RETE_APERTA);
     const domande = /* @__PURE__ */ new Map();
-    let occupatoFino = 0;
+    let occupatoFino = 0, andata = 0;
+    const occupato = (ms) => ms > GIRO + andata;
     const risposto = (w) => {
       const da = domande.get(w);
       if (da === void 0) return;
-      if (da && Date.now() - da > GIRO) occupatoFino = Date.now();
+      if (da && occupato(Date.now() - da)) occupatoFino = Date.now();
       domande.set(w, 0);
     };
     let richieste = 0, bloccate = 0, documenti = 0;
     let stato = null, intestazioni = {}, originale, urlMostrato = url;
     let fermo = null, file, errore, urlRisposta = url;
-    let caricatore = "", caricato = false, quasiFerma = false;
+    let caricatore = "", pronto = false;
     let sveglia = () => {
     };
     const nuovoDocumento = (id) => {
       caricatore = id;
-      caricato = quasiFerma = false;
+      pronto = false;
       documenti++;
     };
     const risposta = async (p) => {
@@ -11850,18 +11856,18 @@ async function leggiConChrome(c, url, o) {
       const p = m.params;
       if (m.method === "Network.requestWillBeSent") {
         richieste++;
-        if (p.type !== "XHR" && p.type !== "Fetch" || bloccato(p.request?.url || "", url)) return;
-        datiInVolo.set(p.requestId, Date.now());
+        if (NON_SCARICATI.has(p.type) || bloccato(p.request?.url || "", url)) return;
+        inCorso.set(p.requestId, Date.now());
+        ultimaRete = Date.now();
       } else if (m.method === "Network.loadingFinished" || m.method === "Network.loadingFailed") {
-        if (!datiInVolo.delete(p.requestId)) return;
-        ultimoDato = Date.now();
+        if (!inCorso.delete(p.requestId)) return;
+        ultimaRete = Date.now();
       } else if (m.method === "Page.frameNavigated" && p.frame?.id === targetId) {
         urlMostrato = p.frame.url;
       } else if (m.method === "Page.lifecycleEvent" && p.frameId === targetId) {
         if (p.name === "init" && p.loaderId !== caricatore) nuovoDocumento(p.loaderId);
         if (p.loaderId !== caricatore) return;
-        if (p.name === "load") caricato = true;
-        if (p.name === "networkAlmostIdle") quasiFerma = true;
+        if (p.name === "DOMContentLoaded") pronto = true;
         sveglia();
       } else if (m.method === "Fetch.requestPaused") {
         if (p.responseStatusCode !== void 0 || p.responseErrorReason !== void 0) {
@@ -11916,41 +11922,54 @@ async function leggiConChrome(c, url, o) {
         if (!da) {
           domande.set(w, ora);
           c.invia("Runtime.evaluate", { expression: "0", returnByValue: true }, w, 6e4).then(() => risposto(w), () => risposto(w));
-        } else if (ora - da > GIRO) occupatoFino = ora;
+        } else if (occupato(ora - da)) occupatoFino = ora;
       }
     };
-    const aspetta = (condizione) => new Promise((ok) => {
+    const aspetta = (condizione, ogni = 0) => new Promise((ok) => {
       if (condizione() || fermo) return ok(true);
-      const t = setTimeout(() => ok(false), Math.max(0, resta()));
-      sveglia = () => {
-        if (condizione() || fermo) {
-          clearTimeout(t);
-          ok(true);
-        }
+      let g;
+      const fine2 = (v2) => {
+        clearTimeout(t);
+        if (g) clearInterval(g);
+        sveglia = () => {
+        };
+        ok(v2);
       };
+      const t = setTimeout(() => fine2(false), Math.max(0, resta()));
+      sveglia = () => {
+        if (condizione() || fermo) fine2(true);
+      };
+      if (ogni) g = setInterval(() => sveglia(), ogni);
     });
-    let passi = 0, altezza = 0, fine = "tetto", scorso = "", inFondo = false;
+    let passi = 0, altezza = 0, hVista = 0, fine = "tetto", scorso = "", inFondo = false;
     while (resta() > 0) {
-      if (!await aspetta(() => caricato || quasiFerma)) break;
+      if (!await aspetta(() => pronto || reteFerma(Date.now()), GIRO)) break;
       if (fermo) return fatto(fermo);
       if (scorso !== caricatore) {
         scorso = caricatore;
         inFondo = false;
-        altezza = 0;
+        altezza = hVista = 0;
         tempi.caricata = Date.now() - t0;
       }
       chiediAiWorker();
       let st;
       try {
+        const a = Date.now();
         st = await valuta(REGISTRO);
+        andata = Date.now() - a;
       } catch {
         if (!sorda) await attesa(100);
         continue;
       }
       if (scorso !== caricatore) continue;
-      if (!inFondo || st.h > altezza + 1) {
-        const allungata = inFondo;
-        const r2 = await valuta(PASSATA(Math.max(500, Math.min(8e3, resta() - 500)))).catch(() => null);
+      if (altezza && st.h > hVista + 1) {
+        tempi.passate = (tempi.passate || 0) + 1;
+        tempi.allungata = Date.now() - t0;
+      }
+      hVista = Math.max(hVista, st.h);
+      if (st.car >= BASTA && (!inFondo || st.h > altezza + 1)) tempi.basta ??= Date.now() - t0;
+      else if (!inFondo || st.h > altezza + 1) {
+        const r2 = await valuta(PASSATA(Math.max(100, Math.min(1e3, resta() - 500)))).catch(() => null);
         if (!r2 || r2.vuota) {
           if (!sorda) await attesa(GIRO);
           continue;
@@ -11958,16 +11977,12 @@ async function leggiConChrome(c, url, o) {
         passi += r2.passi;
         altezza = r2.h;
         inFondo = r2.fondo;
+        hVista = Math.max(hVista, r2.h);
         if (inFondo) tempi.scorsa ??= Date.now() - t0;
-        if (allungata) {
-          tempi.passate = (tempi.passate || 0) + 1;
-          tempi.allungata = Date.now() - t0;
-        }
         continue;
       }
       const ora = Date.now();
-      const dati = ![...datiInVolo.values()].some((da) => ora - da < DATI_IN_VOLO) && ora - ultimoDato >= DOPO_I_DATI;
-      if (st.calma >= CALMA && ora - occupatoFino >= CALMA && dati) {
+      if (st.calma >= CALMA && ora - occupatoFino >= CALMA && reteFerma(ora)) {
         if (!o.fermatiAlRifiuto && stato !== null && stato >= 400) {
           if (await aspetta(() => scorso !== caricatore)) continue;
           break;
@@ -11987,7 +12002,7 @@ async function leggiConChrome(c, url, o) {
       throw e;
     }
     const passate = tempi.passate || 0;
-    const cresceva = fine === "tetto" && passate > 0 && (typeof r.h === "number" && r.h > altezza + 1 || passate >= 3 && tempi.finita - (tempi.allungata || 0) < 5e3);
+    const cresceva = tempi.basta !== void 0 || fine === "tetto" && passate > 0 && (typeof r.h === "number" && r.h > hVista + 1 || tempi.finita - (tempi.allungata || 0) < 5e3);
     tempi.totale = Date.now() - t0;
     return { html: r.html, url: urlMostrato, titolo: r.titolo, stato, intestazioni, originale, fine, cresceva, tolti: Array.isArray(r.tolti) ? r.tolti : [], tempi, richieste, bloccate, documenti, altezza, passi, versione };
   } finally {
@@ -22265,9 +22280,8 @@ function completa(doc, l, chiesto, righe) {
   const t = aggiungiTolti(doc, l.tolti || []);
   if (t) info.push(`In fondo, sotto \xAB${TOLTI}\xBB, ${t === 1 ? "un pezzo" : `${t} pezzi`} di testo che la pagina ha tolto mentre si scorreva.`);
   const secondi = Math.round((l.tempi.finita || 0) / 1e3);
-  if (l.fine === "tetto") {
-    info.push(l.cresceva ? `\u26A0 La pagina continua: in ${secondi} s si \xE8 allungata ${l.tempi.passate === 1 ? "una volta" : `${l.tempi.passate || 0} volte`} scorrendo e si allungava ancora (un elenco che non finisce). Qui c'\xE8 quello che ha caricato fin l\xEC.` : `\u26A0 Dopo ${secondi} s la pagina caricava ancora: il testo \xE8 quello di quel momento, e una parte potrebbe mancare.`);
-  }
+  if (l.cresceva) info.push(`\u26A0 La pagina continua: in ${secondi} s si \xE8 allungata ${l.tempi.passate === 1 ? "una volta" : `${l.tempi.passate || 0} volte`} scorrendo e si allungava ancora (un elenco che non finisce). Qui c'\xE8 quello che ha caricato fin l\xEC.`);
+  else if (l.fine === "tetto") info.push(`\u26A0 Dopo ${secondi} s la pagina caricava ancora: il testo \xE8 quello di quel momento, e una parte potrebbe mancare.`);
   doc.info = info;
   return doc;
 }
