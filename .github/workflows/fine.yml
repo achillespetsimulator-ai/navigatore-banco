@@ -1,0 +1,48 @@
+# Le misure di «quando la pagina ha finito di mostrare» per apri del navigatore (23/11/2026). Il registratore
+# (fine/registratore.mjs, costruito da prova_node/apri/registratore.ts del navigatore) legge ogni pagina con lo stesso
+# Chrome della macchina di apri e registra tutto con l'ora; un file per pagina, nei risultati (artifact) per 7 giorni.
+name: fine
+on:
+  workflow_dispatch:
+    inputs:
+      lista: { description: "fine/progetto.txt o fine/verifica.txt", required: true, default: "fine/progetto.txt" }
+      insieme: { description: "pagine insieme per macchina (8 come apri, 1 da sole)", required: true, default: "8" }
+      giro: { description: "numero del giro", required: true, default: "1" }
+      secondi: { description: "secondi di lettura paziente per pagina", required: true, default: "40" }
+      html: { description: "si = salva anche l'HTML finale (per il convertitore)", required: true, default: "no" }
+permissions:
+  contents: read
+jobs:
+  misura:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        parte: [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Chrome, lo stesso della macchina di apri, con la sua sandbox
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          curl -sSfL -o /tmp/s.zip https://storage.googleapis.com/chrome-for-testing-public/158.0.8127.36/linux64/chrome-headless-shell-linux64.zip
+          sudo mkdir -p /opt/chrome && sudo unzip -q /tmp/s.zip -d /opt/chrome
+          sudo ln -sf /opt/chrome/chrome-headless-shell-linux64/chrome-headless-shell /opt/chrome/chrome
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get satisfy -y -qq --no-install-recommends "$(paste -sd, /opt/chrome/chrome-headless-shell-linux64/deb.deps)"
+          /opt/chrome/chrome --version
+          curl -sSfL -o /tmp/hosts.txt https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+          nproc; free -g | head -2
+      - name: Misure
+        run: |
+          node fine/registratore.mjs --chrome /opt/chrome/chrome --lista "${{ inputs.lista }}" --uscita out \
+            --insieme "${{ inputs.insieme }}" --giro "${{ inputs.giro }}" --secondi "${{ inputs.secondi }}" \
+            --parte "${{ matrix.parte }}/20" --elenco /tmp/hosts.txt ${{ inputs.html == 'si' && '--html' || '' }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fine-${{ inputs.giro }}-${{ inputs.insieme }}-${{ matrix.parte }}
+          path: out
+          retention-days: 7
