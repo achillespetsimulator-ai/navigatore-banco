@@ -22275,7 +22275,7 @@ var PASSO = `(async () => {
   const se = document.scrollingElement || document.documentElement;
   if (!document.body || !se) return { vuota: true };
   const r = ${RIQUADRO};
-  scrollBy(0, innerHeight); if (r) r.scrollTop += r.clientHeight;
+  scrollBy({ top: innerHeight, behavior: 'instant' }); if (r) r.scrollBy({ top: r.clientHeight, behavior: 'instant' });
   window.__navLettore && window.__navLettore.azione();
   await fotogrammi();
   const fondo = scrollY + innerHeight >= se.scrollHeight - 5 && (!r || r.scrollTop + r.clientHeight >= r.scrollHeight - 5);
@@ -22284,8 +22284,8 @@ var PASSO = `(async () => {
 var SU = `(async () => {
   ${FOTOGRAMMI}
   const r = ${RIQUADRO};
-  scrollBy(0, -300); if (r) r.scrollTop -= 300; await fotogrammi();
-  scrollBy(0, 1e7); if (r) r.scrollTop += 1e7;
+  scrollBy({ top: -300, behavior: 'instant' }); if (r) r.scrollBy({ top: -300, behavior: 'instant' }); await fotogrammi();
+  scrollBy({ top: 1e7, behavior: 'instant' }); if (r) r.scrollBy({ top: 1e7, behavior: 'instant' });
   window.__navLettore && window.__navLettore.azione();
   await fotogrammi();
   const se = document.scrollingElement || document.documentElement;
