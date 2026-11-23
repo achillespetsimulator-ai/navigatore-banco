@@ -22191,6 +22191,267 @@ function completa(doc, l, chiesto, righe) {
   return doc;
 }
 
+// prova_node/apri/nuovo.ts
+var attesa2 = (ms) => new Promise((ok) => setTimeout(ok, ms));
+var GIRO = 250;
+var STATO = `(() => {
+  const K = '__navLettore';
+  let n = window[K];
+  if (!n) {
+    const BLOCCO = /^(ADDRESS|ARTICLE|ASIDE|BLOCKQUOTE|BR|CAPTION|DD|DETAILS|DIALOG|DIV|DL|DT|FIELDSET|FIGCAPTION|FIGURE|FOOTER|FORM|H[1-6]|HEADER|HR|LEGEND|LI|MAIN|NAV|OL|OPTION|P|PRE|SECTION|SUMMARY|TABLE|TBODY|TD|TFOOT|TH|THEAD|TR|UL|BUTTON|LABEL)$/i;
+    const SALTA = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|SVG|MATH|IFRAME|CANVAS|VIDEO|AUDIO|OBJECT)$/i;
+    const PAROLA = /[\\p{L}\\p{N}]+/gu;
+    const viste = new Set(), coppie = new Set(), osservate = new WeakSet(), tolti = [], tolte = new Set();
+    let sporco = true, ultimoTesto = 0, ultimaAzione = 0, fineLoaf = 0, costo = 0;
+    // il testo a blocchi (come il registro del registratore), anche dentro le shadow root aperte, che si osservano quando si trovano
+    const righe = (radice, osserva) => {
+      const out = []; let cur = '';
+      const chiudi = () => { const s = cur.replace(/\\s+/g, ' ').trim(); if (s) out.push(s); cur = ''; };
+      const giro = (x) => {
+        for (let k = x.firstChild; k; k = k.nextSibling) {
+          if (k.nodeType === 3) cur += k.nodeValue;
+          else if (k.nodeType === 1) {
+            if (SALTA.test(k.tagName)) continue;
+            const b = BLOCCO.test(k.tagName); if (b) chiudi();
+            if (k.shadowRoot) { if (osserva) osserva(k.shadowRoot); giro(k.shadowRoot); }
+            giro(k);
+            if (b) chiudi();
+          }
+        }
+      };
+      if (radice.nodeType === 3) cur = radice.nodeValue; else giro(radice);
+      chiudi();
+      return out;
+    };
+    // il testo tolto dalla pagina, dal load (prima toglie solo testo di passaggio): apri lo consegna in fondo
+    const mo = new MutationObserver((ms) => {
+      sporco = true;
+      if (document.readyState !== 'complete') return;
+      for (const m of ms) for (const x of m.removedNodes) {
+        if (x.nodeType !== 1 && x.nodeType !== 3) continue;
+        if (x.nodeType === 1 && SALTA.test(x.tagName)) continue;
+        const t = righe(x).join('\\n');
+        if (t && !tolte.has(t)) { tolte.add(t); tolti.push(t.slice(0, 20000)); }
+      }
+    });
+    const osserva = (r) => { if (osservate.has(r)) return; osservate.add(r); mo.observe(r, { childList: true, subtree: true, characterData: true }); };
+    osserva(document);
+    let po = null;
+    const loaf = (l) => { for (const e of l) fineLoaf = Math.max(fineLoaf, e.startTime + e.duration); };
+    try { po = new PerformanceObserver((l) => loaf(l.getEntries())); po.observe({ type: 'long-animation-frame', buffered: true }); } catch (e) {}
+    const guarda = () => {
+      const t = performance.now();
+      sporco = false;
+      let nuovo = false;
+      for (const s of righe(document.body || document.documentElement, osserva)) {
+        if (viste.has(s)) continue;
+        viste.add(s);
+        const w = s.toLowerCase().match(PAROLA) || [];
+        if (w.length === 1 && !coppie.has(w[0])) { coppie.add(w[0]); nuovo = true; }
+        for (let i = 0; i + 1 < w.length; i++) { const c = w[i] + ' ' + w[i + 1]; if (!coppie.has(c)) { coppie.add(c); nuovo = true; } }
+      }
+      if (nuovo) ultimoTesto = performance.now();
+      costo = performance.now() - t;
+    };
+    n = {
+      azione: () => { ultimaAzione = performance.now(); },
+      tolti: () => tolti,
+      stato: () => {
+        if (sporco && (document.body || document.documentElement)) guarda();
+        if (po) loaf(po.takeRecords());
+        const nav = performance.getEntriesByType('navigation')[0] || {};
+        const ora = performance.now();
+        const ultimo = Math.max(ultimoTesto, ultimaAzione, fineLoaf, nav.domContentLoadedEventEnd || 0, nav.loadEventEnd || 0);
+        return { calma: Math.round(ora - ultimo), testo: Math.round(ora - ultimoTesto), carico: document.readyState === 'complete', coppie: coppie.size, costo: Math.round(costo), dcl: document.readyState !== 'loading' };
+      },
+    };
+    Object.defineProperty(window, K, { value: n, enumerable: false, configurable: true });
+  }
+  return n.stato();
+})()`;
+var RIQUADRO = `[...document.querySelectorAll('body *')].filter((e) => e.scrollHeight > e.clientHeight + 50 && e.clientHeight > 200 && /auto|scroll|overlay/.test(getComputedStyle(e).overflowY)).sort((a, b) => b.clientHeight * b.clientWidth - a.clientHeight * a.clientWidth)[0]`;
+var PASSO = `(async () => {
+  ${FOTOGRAMMI}
+  const se = document.scrollingElement || document.documentElement;
+  if (!document.body || !se) return { vuota: true };
+  const r = ${RIQUADRO};
+  scrollBy(0, innerHeight); if (r) r.scrollTop += r.clientHeight;
+  window.__navLettore && window.__navLettore.azione();
+  await fotogrammi();
+  const fondo = scrollY + innerHeight >= se.scrollHeight - 5 && (!r || r.scrollTop + r.clientHeight >= r.scrollHeight - 5);
+  return { fondo, h: se.scrollHeight + (r ? r.scrollHeight : 0) };
+})()`;
+var SU = `(async () => {
+  ${FOTOGRAMMI}
+  const r = ${RIQUADRO};
+  scrollBy(0, -300); if (r) r.scrollTop -= 300; await fotogrammi();
+  scrollBy(0, 1e7); if (r) r.scrollTop += 1e7;
+  window.__navLettore && window.__navLettore.azione();
+  await fotogrammi();
+  const se = document.scrollingElement || document.documentElement;
+  return { h: (se ? se.scrollHeight : 0) + (r ? r.scrollHeight : 0) };
+})()`;
+var FINE2 = `(() => { const r = ${HTML}; r.tolti = window.__navLettore ? window.__navLettore.tolti() : []; return r; })()`;
+async function leggiNuovo(c, url, o) {
+  const CALMA = o.calma ?? 2e3;
+  const t0 = Date.now();
+  const tempi = {};
+  const v = await c.invia("Browser.getVersion");
+  const senzaSchermo = /HeadlessChrome/.test(String(v.product || ""));
+  const browserContextId = (await c.invia("Target.createBrowserContext", { disposeOnDetach: true })).browserContextId;
+  const togli = [];
+  try {
+    const { targetId } = await c.invia("Target.createTarget", { url: "about:blank", browserContextId });
+    const s = (await c.invia("Target.attachToTarget", { targetId, flatten: true })).sessionId;
+    let stato = null, rifiuto = false, caricatore = "", documenti = 0, urlMostrato = url;
+    togli.push(c.ascolta((m) => {
+      if (m.sessionId !== s) return;
+      const p = m.params;
+      if (m.method === "Page.lifecycleEvent" && p.frameId === targetId && p.name === "init" && p.loaderId !== caricatore) {
+        caricatore = p.loaderId;
+        documenti++;
+      } else if (m.method === "Page.frameNavigated" && p.frame?.id === targetId) urlMostrato = p.frame.url;
+      else if (m.method === "Fetch.requestPaused") {
+        if (p.responseStatusCode !== void 0 || p.responseErrorReason !== void 0) {
+          if (p.resourceType === "Document" && p.frameId === targetId && p.responseStatusCode !== void 0 && !(p.responseStatusCode >= 300 && p.responseStatusCode < 400)) {
+            stato = p.responseStatusCode;
+            if (p.responseStatusCode >= 400) {
+              rifiuto = true;
+              c.invia("Fetch.failRequest", { requestId: p.requestId, errorReason: "Aborted" }, s).catch(() => {
+              });
+              return;
+            }
+          }
+          c.invia("Fetch.continueRequest", { requestId: p.requestId }, s).catch(() => {
+          });
+          return;
+        }
+        if (p.resourceType !== "Document" && (NON_SCARICATI.has(p.resourceType) || bloccato(p.request.url, url))) c.invia("Fetch.failRequest", { requestId: p.requestId, errorReason: "BlockedByClient" }, s).catch(() => {
+        });
+        else c.invia("Fetch.continueRequest", { requestId: p.requestId }, s).catch(() => {
+        });
+      }
+    }));
+    await Promise.all([
+      c.invia("Page.enable", {}, s),
+      c.invia("Page.setLifecycleEventsEnabled", { enabled: true }, s),
+      c.invia("Network.enable", {}, s),
+      ...senzaSchermo ? [c.invia("Network.setUserAgentOverride", identita(v), s)] : [],
+      c.invia("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, s),
+      c.invia("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }, { resourceType: "Document", requestStage: "Response" }] }, s)
+    ]);
+    const resta = () => o.tetto - (Date.now() - t0);
+    let sorda = false;
+    const valuta = async (expression, ms = Math.max(3e3, Math.min(1e4, resta()))) => {
+      let r2;
+      try {
+        r2 = await c.invia("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, s, ms);
+      } catch (e) {
+        if (/^Chrome non ha risposto/.test(e.message)) sorda = true;
+        throw e;
+      }
+      if (r2.exceptionDetails) throw new Error(`errore nella pagina: ${r2.exceptionDetails.text}`);
+      return r2.result.value;
+    };
+    const fatto = (fine2, extra = {}) => {
+      tempi.totale = Date.now() - t0;
+      return { fine: fine2, url: urlMostrato, stato, documenti, tempi, ...extra };
+    };
+    const nav = await c.invia("Page.navigate", { url }, s, Math.max(1e3, resta())).catch((e) => ({ errorText: String(e.message) }));
+    tempi.navigazione = Date.now() - t0;
+    if (rifiuto) return fatto("rifiuto");
+    if (nav.errorText) return fatto("errore", { errore: nav.errorText });
+    let doc = caricatore, fondo = false, scosso = false, h = 0, passi = 0, fine = "tetto", ultimo = null;
+    while (resta() > 0 && !sorda && !rifiuto) {
+      if (doc !== caricatore) {
+        doc = caricatore;
+        fondo = scosso = false;
+        h = 0;
+      }
+      let st;
+      try {
+        st = await valuta(STATO);
+      } catch {
+        if (sorda) break;
+        await attesa2(100);
+        continue;
+      }
+      if (doc !== caricatore) continue;
+      ultimo = st;
+      const pronto = o.modo === "veloce" ? st.carico : st.dcl;
+      if (pronto && !fondo) {
+        tempi.scorre ??= Date.now() - t0;
+        for (; ; ) {
+          let r2;
+          try {
+            r2 = await valuta(PASSO);
+          } catch {
+            break;
+          }
+          if (r2.vuota) break;
+          passi++;
+          h = r2.h;
+          if (o.modo === "paziente") {
+            const a = Date.now();
+            while (Date.now() - a < 2e3 && resta() > 0) {
+              await attesa2(100);
+              const x = await valuta(STATO).catch(() => null);
+              if (!x || x.testo >= 300 && Date.now() - a >= 200) break;
+            }
+          }
+          if (r2.fondo || resta() <= 0 || doc !== caricatore) {
+            fondo = !!r2.fondo;
+            break;
+          }
+        }
+        if (fondo) tempi.fondo ??= Date.now() - t0;
+        else await attesa2(GIRO);
+        continue;
+      }
+      if (fondo && !scosso) {
+        scosso = true;
+        try {
+          const r2 = await valuta(SU);
+          if (r2.h > h + 1) fondo = scosso = false;
+          h = r2.h;
+        } catch {
+        }
+        continue;
+      }
+      if (fondo) {
+        let hh = h;
+        try {
+          hh = await valuta(`(() => { const se = document.scrollingElement || document.documentElement; const r = ${RIQUADRO}; return (se ? se.scrollHeight : 0) + (r ? r.scrollHeight : 0); })()`);
+        } catch {
+        }
+        if (hh > h + 1) {
+          fondo = scosso = false;
+          h = hh;
+          continue;
+        }
+        if (st.carico && st.coppie > 0 && st.calma >= CALMA) {
+          fine = "finita";
+          break;
+        }
+      }
+      await attesa2(GIRO);
+    }
+    tempi.finita = Date.now() - t0;
+    if (rifiuto) return fatto("rifiuto");
+    let r = null;
+    try {
+      r = await valuta(FINE2, sorda ? 5e3 : 15e3);
+    } catch (e) {
+      return fatto(sorda ? "sorda" : fine, { errore: String(e.message).slice(0, 200) });
+    }
+    return fatto(sorda ? "sorda" : fine, { html: r.html, titolo: r.titolo, tolti: Array.isArray(r.tolti) ? r.tolti : [], passi, continua: fine === "tetto" && ultimo ? ultimo.testo < CALMA : false, coppie: ultimo?.coppie, costo: ultimo?.costo });
+  } finally {
+    for (const f of togli) f();
+    c.invia("Target.disposeBrowserContext", { browserContextId }).catch(() => {
+    });
+  }
+}
+
 // prova_node/apri/registratore.ts
 var arg = (n, d = "") => {
   const i = process.argv.indexOf(`--${n}`);
@@ -22201,7 +22462,7 @@ var CHROME = arg("chrome", "/opt/chrome/chrome");
 var USCITA = arg("uscita", "reg");
 var INSIEME = Number(arg("insieme", "8"));
 var SECONDI = Number(arg("secondi", "40"));
-var GIRO = Number(arg("giro", "1"));
+var GIRO2 = Number(arg("giro", "1"));
 var SOLO = arg("solo");
 var urls = fs.readFileSync(arg("lista"), "utf8").split("\n").map((s) => s.trim()).filter((s) => s && !s.startsWith("#"));
 var DA = Number(arg("da", "0"));
@@ -22302,7 +22563,7 @@ var REGISTRO = `(() => {
   try { new PerformanceObserver((l) => { for (const e of l.getEntries()) manda('loaf', [Math.round(performance.timeOrigin + e.startTime), Math.round(e.duration), Math.round(e.blockingDuration || 0)]); }).observe({ type: 'long-animation-frame', buffered: true }); } catch (e) {}
   try { new PerformanceObserver((l) => { for (const e of l.getEntries()) manda('lcp', [Math.round(performance.timeOrigin + (e.renderTime || e.loadTime || e.startTime)), e.size]); }).observe({ type: 'largest-contentful-paint', buffered: true }); } catch (e) {}
 })()`;
-var PASSO = `(async () => {
+var PASSO2 = `(async () => {
   ${FOTOGRAMMI}
   const se = document.scrollingElement || document.documentElement;
   if (!document.body || !se) return { vuota: true };
@@ -22313,7 +22574,7 @@ var PASSO = `(async () => {
   return { y: Math.round(scrollY), h: se.scrollHeight, rh: r ? r.scrollHeight : 0, ry: r ? Math.round(r.scrollTop) : 0, fondo: fondoF && fondoR };
 })()`;
 var ALTEZZA_R = `(() => { const se = document.scrollingElement || document.documentElement; return se ? se.scrollHeight : null; })()`;
-var SU = `(async () => {
+var SU2 = `(async () => {
   ${FOTOGRAMMI}
   const r = [...document.querySelectorAll('body *')].filter((e) => e.scrollHeight > e.clientHeight + 50 && e.clientHeight > 200 && /auto|scroll|overlay/.test(getComputedStyle(e).overflowY)).sort((a, b) => b.clientHeight * b.clientWidth - a.clientHeight * a.clientWidth)[0];
   scrollBy(0, -300); if (r) r.scrollTop -= 300; await fotogrammi();
@@ -22321,7 +22582,7 @@ var SU = `(async () => {
   const se = document.scrollingElement || document.documentElement;
   return { h: se ? se.scrollHeight : 0 };
 })()`;
-var attesa2 = (ms) => new Promise((ok) => setTimeout(ok, ms));
+var attesa3 = (ms) => new Promise((ok) => setTimeout(ok, ms));
 var dominio = (u) => {
   try {
     return new URL(u).hostname.split(".").slice(-2).join(".");
@@ -22418,7 +22679,7 @@ async function registra(c, url, html) {
       const a = Date.now();
       while (Date.now() - a < max && resta() > 0) {
         if (Date.now() - ultimoTesto >= ms && Date.now() - a >= Math.min(ms, 200)) return true;
-        await attesa2(50);
+        await attesa3(50);
       }
       return false;
     };
@@ -22440,7 +22701,7 @@ async function registra(c, url, html) {
     const svuotatore = (async () => {
       while (attivo) {
         await svuota();
-        await attesa2(300);
+        await attesa3(300);
       }
     })();
     ev("inizio", { url });
@@ -22448,30 +22709,30 @@ async function registra(c, url, html) {
     ev("navigate", nav.errorText ? { errore: nav.errorText } : {});
     if (nav.errorText) return { t0, eventi, errore: nav.errorText };
     const dcl = Date.now();
-    while (Date.now() - dcl < 3e3 && !eventi.some((e) => e[0] === "ciclo" && e[2][0] === "DOMContentLoaded")) await attesa2(50);
+    while (Date.now() - dcl < 3e3 && !eventi.some((e) => e[0] === "ciclo" && e[2][0] === "DOMContentLoaded")) await attesa3(50);
     let passi = 0, sorde = 0, inFondo = 0;
     while (resta() > 0) {
       let r = null;
       try {
-        r = await valuta(PASSO);
+        r = await valuta(PASSO2);
         sorde = 0;
       } catch (e) {
         ev("sorda", String(e.message).slice(0, 100));
         if (++sorde >= 3) break;
-        await attesa2(500);
+        await attesa3(500);
         continue;
       }
       passi++;
       ev("passo", r);
       if (r.vuota) {
-        await attesa2(300);
+        await attesa3(300);
         continue;
       }
       await fermo(300, 2e3);
       if (!r.fondo) continue;
       const prima = righeViste;
       try {
-        ev("su", await valuta(SU));
+        ev("su", await valuta(SU2));
       } catch {
       }
       await fermo(300, 2e3);
@@ -22484,7 +22745,7 @@ async function registra(c, url, html) {
       inFondo++;
       ev("fondo", { h: r.h, volta: inFondo });
       const prima2 = righeViste, a = Date.now();
-      while (resta() > 0 && Date.now() - a < 6e3 && righeViste === prima2) await attesa2(100);
+      while (resta() > 0 && Date.now() - a < 6e3 && righeViste === prima2) await attesa3(100);
     }
     const fase = inFondo ? "in fondo" : "scorreva";
     attivo = false;
@@ -22583,30 +22844,49 @@ async function lettore(c, url) {
     return { t0, ms: Date.now() - t0, errore: String(e.message).slice(0, 300) };
   }
 }
+async function nuovo(c, url, modo) {
+  const t0 = Date.now();
+  try {
+    const l = await leggiNuovo(c, url, { tetto: 2e4, modo });
+    let righeReg = [];
+    if (l.html) {
+      try {
+        righeReg = righeComeRegistro(l.html);
+      } catch {
+      }
+    }
+    const { html, ...resto } = l;
+    return { t0, ms: Date.now() - t0, ...resto, righeReg, car: html ? html.length : 0 };
+  } catch (e) {
+    return { t0, ms: Date.now() - t0, errore: String(e.message).slice(0, 300) };
+  }
+}
+var LETTORI = arg("lettori", "lettore,registro").split(",");
 var coda = urls.map((u, n) => ({ u, n })).filter((x) => x.n >= DA && x.n < A && x.n % PN === PK);
 var fatti = 0;
 await Promise.all(Array.from({ length: INSIEME }, async () => {
   for (let x = coda.shift(); x; x = coda.shift()) {
-    const out = { url: x.u, n: x.n, giro: GIRO, insieme: INSIEME, secondi: SECONDI, chrome: "", ora: (/* @__PURE__ */ new Date()).toISOString() };
-    const ordine = (x.n + GIRO) % 2 ? ["registro", "lettore"] : ["lettore", "registro"];
+    const out = { url: x.u, n: x.n, giro: GIRO2, insieme: INSIEME, secondi: SECONDI, chrome: "", ora: (/* @__PURE__ */ new Date()).toISOString() };
+    const k = (x.n + GIRO2) % LETTORI.length, ordine = [...LETTORI.slice(k), ...LETTORI.slice(0, k)];
     for (const cosa of ordine) {
       if (SOLO && SOLO !== cosa) continue;
       let c = null;
       try {
         c = await lancia();
         out.chrome = String((await c.invia("Browser.getVersion")).product || "");
-        const lavoro = cosa === "lettore" ? lettore(c, x.u) : registra(c, x.u, ha("html"));
-        out[cosa] = await Promise.race([lavoro, attesa2(SECONDI * 1e3 + 9e4).then(() => ({ errore: "il registratore non ha finito in tempo" }))]);
+        const lavoro = cosa === "lettore" ? lettore(c, x.u) : cosa === "registro" ? registra(c, x.u, ha("html")) : nuovo(c, x.u, cosa);
+        out[cosa] = await Promise.race([lavoro, attesa3(SECONDI * 1e3 + 9e4).then(() => ({ errore: "il registratore non ha finito in tempo" }))]);
       } catch (e) {
         out[cosa] = { errore: String(e.message).slice(0, 300) };
       } finally {
         c?.chiudi();
       }
     }
-    fs.writeFileSync(path.join(USCITA, `${x.n}-${GIRO}-${INSIEME}.json.gz`), zlib.gzipSync(JSON.stringify(out)));
+    fs.writeFileSync(path.join(USCITA, `${x.n}-${GIRO2}-${INSIEME}.json.gz`), zlib.gzipSync(JSON.stringify(out)));
     fatti++;
     const rr = out.registro, ll = out.lettore;
-    console.log(`${fatti} ${x.n} ${x.u.slice(0, 70)} \xB7 lettore ${ll ? `${ll.fine || ll.errore?.slice(0, 40)} ${ll.ms} ms ${ll.corpo?.length ?? 0} car` : "-"} \xB7 registro ${rr ? rr.errore ? rr.errore.slice(0, 60) : `${rr.eventi?.length} eventi, innerText ${rr.finale?.innerText?.length ?? "?"}` : "-"}`);
+    const nv = ["veloce", "paziente"].filter((k2) => out[k2]).map((k2) => ` \xB7 ${k2} ${out[k2].fine || out[k2].errore?.slice(0, 40)} ${out[k2].ms} ms`).join("");
+    console.log(`${fatti} ${x.n} ${x.u.slice(0, 70)}${nv} \xB7 lettore ${ll ? `${ll.fine || ll.errore?.slice(0, 40)} ${ll.ms} ms ${ll.corpo?.length ?? 0} car` : "-"} \xB7 registro ${rr ? rr.errore ? rr.errore.slice(0, 60) : `${rr.eventi?.length} eventi, innerText ${rr.finale?.innerText?.length ?? "?"}` : "-"}`);
   }
 }));
 process.exit(0);
