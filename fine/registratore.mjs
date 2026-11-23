@@ -22304,7 +22304,29 @@ async function leggiNuovo(c, url, o) {
     const { targetId } = await c.invia("Target.createTarget", { url: "about:blank", browserContextId });
     const s = (await c.invia("Target.attachToTarget", { targetId, flatten: true })).sessionId;
     let stato = null, rifiuto = false, caricatore = "", documenti = 0, urlMostrato = url;
+    const lavori = /* @__PURE__ */ new Map();
+    let occupatoFino = 0;
+    const risposto = (w) => {
+      const da = lavori.get(w);
+      if (da === void 0) return;
+      if (da && Date.now() - da > GIRO) occupatoFino = Date.now();
+      lavori.set(w, 0);
+    };
+    const chiediAiWorker = () => {
+      const ora = Date.now();
+      for (const [w, da] of lavori) {
+        if (!da) {
+          lavori.set(w, ora);
+          c.invia("Runtime.evaluate", { expression: "0", returnByValue: true }, w, 6e4).then(() => risposto(w), () => risposto(w));
+        } else if (ora - da > GIRO) occupatoFino = ora;
+      }
+    };
     togli.push(c.ascolta((m) => {
+      if (m.method === "Target.attachedToTarget" && m.sessionId === s && m.params.targetInfo?.type === "worker") lavori.set(m.params.sessionId, 0);
+      if (m.method === "Target.detachedFromTarget" && m.sessionId === s) {
+        risposto(m.params.sessionId);
+        lavori.delete(m.params.sessionId);
+      }
       if (m.sessionId !== s) return;
       const p = m.params;
       if (m.method === "Page.lifecycleEvent" && p.frameId === targetId && p.name === "init" && p.loaderId !== caricatore) {
@@ -22338,7 +22360,8 @@ async function leggiNuovo(c, url, o) {
       c.invia("Network.enable", {}, s),
       ...senzaSchermo ? [c.invia("Network.setUserAgentOverride", identita(v), s)] : [],
       c.invia("Emulation.setDeviceMetricsOverride", { width: 1280, height: 800, deviceScaleFactor: 1, mobile: false }, s),
-      c.invia("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }, { resourceType: "Document", requestStage: "Response" }] }, s)
+      c.invia("Fetch.enable", { patterns: [{ urlPattern: "*", requestStage: "Request" }, { resourceType: "Document", requestStage: "Response" }] }, s),
+      c.invia("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, s)
     ]);
     const resta = () => o.tetto - (Date.now() - t0);
     let sorda = false;
@@ -22368,6 +22391,7 @@ async function leggiNuovo(c, url, o) {
         fondo = scosso = false;
         h = 0;
       }
+      chiediAiWorker();
       let st;
       try {
         st = await valuta(STATO);
@@ -22429,7 +22453,7 @@ async function leggiNuovo(c, url, o) {
           h = hh;
           continue;
         }
-        if (st.carico && st.coppie > 0 && st.calma >= CALMA) {
+        if (st.carico && st.coppie > 0 && st.calma >= CALMA && Date.now() - occupatoFino >= CALMA) {
           fine = "finita";
           break;
         }
@@ -22444,6 +22468,7 @@ async function leggiNuovo(c, url, o) {
     } catch (e) {
       return fatto(sorda ? "sorda" : fine, { errore: String(e.message).slice(0, 200) });
     }
+    if (occupatoFino) tempi.workerOccupati = occupatoFino - t0;
     return fatto(sorda ? "sorda" : fine, { html: r.html, titolo: r.titolo, tolti: Array.isArray(r.tolti) ? r.tolti : [], passi, continua: fine === "tetto" && ultimo ? ultimo.testo < CALMA : false, coppie: ultimo?.coppie, costo: ultimo?.costo });
   } finally {
     for (const f of togli) f();
