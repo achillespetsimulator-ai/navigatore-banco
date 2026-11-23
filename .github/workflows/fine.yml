@@ -11,7 +11,7 @@ on:
       secondi: { description: "secondi di lettura paziente per pagina", required: true, default: "40" }
       html: { description: "si = salva anche l'HTML finale (per il convertitore)", required: true, default: "no" }
       gruppi: { description: "0 = letture normali; G = le chiamate vere a gruppi di G (vecchio e nuovo a turno)", required: true, default: "0" }
-      versioni: { description: "con gruppi: le due letture da confrontare (vecchio, nuovo, nuovo1)", required: true, default: "vecchio,nuovo" }
+      versioni: { description: "con gruppi: le due letture da confrontare (vecchio = apri di oggi, prima = il lettore nuovo prima delle correzioni del 24/11, nuovo)", required: true, default: "vecchio,nuovo" }
       lettori: { description: "le letture per pagina: lettore (apri di oggi), veloce e paziente (il lettore nuovo), registro (riferimento)", required: true, default: "lettore,registro" }
 permissions:
   contents: read
