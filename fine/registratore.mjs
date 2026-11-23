@@ -22287,6 +22287,16 @@ var REGISTRO = `(() => {
   const orig = Element.prototype.attachShadow;
   Element.prototype.attachShadow = function (o) { const r = orig.call(this, o); osserva(r); return r; };
   window.__navGuarda = guarda;
+  // il testo tolto (come REGISTRO_TOLTI in lib/chrome.ts): fa parte del testo che apri consegna
+  window.__navTolti = [];
+  const vistiT = new Set();
+  const togliTesto = (n) => { if (n.nodeType === 3) return n.nodeValue; if (n.nodeType !== 1 || SALTA.test(n.tagName)) return ''; fuori = []; cur = ''; const b = BLOCCO.test(n.tagName); giro(n); chiudi(); const r = fuori.join('\\n'); fuori = []; return r; };
+  // dal load del documento, come apri (che lo mette quando la pagina \xE8 caricata): prima la pagina toglie solo testo di
+  // passaggio (le date riscritte dal suo programma, \xABCaricamento\u2026\xBB)
+  let dalLoad = false; addEventListener('load', () => { dalLoad = true; });
+  new MutationObserver((ms) => { if (!dalLoad) return; for (const m of ms) for (const n of m.removedNodes) { const t = togliTesto(n).trim(); if (t && !vistiT.has(t)) { vistiT.add(t); window.__navTolti.push(t.slice(0, 20000)); } } }).observe(document, { childList: true, subtree: true });
+  // tutte le righe di adesso (alla fine)
+  window.__navRighe = () => { fuori = []; cur = ''; if (document.body || document.documentElement) giro(document.body || document.documentElement); chiudi(); const r = fuori; fuori = []; return r; };
   document.addEventListener('DOMContentLoaded', () => guarda('dcl'));
   addEventListener('load', () => guarda('load'));
   try { new PerformanceObserver((l) => { for (const e of l.getEntries()) manda('loaf', [Math.round(performance.timeOrigin + e.startTime), Math.round(e.duration), Math.round(e.blockingDuration || 0)]); }).observe({ type: 'long-animation-frame', buffered: true }); } catch (e) {}
@@ -22491,6 +22501,11 @@ async function registra(c, url, html) {
     } catch (e) {
       finale.errore = String(e.message);
     }
+    try {
+      finale.righe = await valuta("window.__navRighe ? window.__navRighe() : null", 15e3);
+      finale.tolti = await valuta("window.__navTolti || []", 15e3);
+    } catch {
+    }
     if (html) {
       try {
         finale.html = (await valuta(HTML, 15e3)).html;
@@ -22509,6 +22524,35 @@ async function registra(c, url, html) {
     });
   }
 }
+var BLOCCO_N = /^(ADDRESS|ARTICLE|ASIDE|BLOCKQUOTE|BR|CAPTION|DD|DETAILS|DIALOG|DIV|DL|DT|FIELDSET|FIGCAPTION|FIGURE|FOOTER|FORM|H[1-6]|HEADER|HR|LEGEND|LI|MAIN|NAV|OL|OPTION|P|PRE|SECTION|SUMMARY|TABLE|TBODY|TD|TFOOT|TH|THEAD|TR|UL|BUTTON|LABEL)$/i;
+var SALTA_N = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|SVG|MATH|IFRAME|CANVAS|VIDEO|AUDIO|OBJECT)$/i;
+function righeComeRegistro(html) {
+  const testa = html.search(/<head[\s>]/i);
+  if (testa > 0) html = html.slice(0, testa).replace(/<script\b[\s\S]*?<\/script>|<(link|meta|style)\b[^>]*>/gi, "") + html.slice(testa);
+  const { document: document2 } = parseHTML(html);
+  const out = [];
+  let cur = "";
+  const chiudi = () => {
+    const x = cur.replace(/\s+/g, " ").trim();
+    if (x) out.push(x.length > 4e3 ? x.slice(0, 4e3) : x);
+    cur = "";
+  };
+  const giro = (n) => {
+    for (let k = n.firstChild; k; k = k.nextSibling) {
+      if (k.nodeType === 3) cur += k.nodeValue;
+      else if (k.nodeType === 1) {
+        if (SALTA_N.test(k.tagName)) continue;
+        const b = BLOCCO_N.test(k.tagName);
+        if (b) chiudi();
+        giro(k);
+        if (b) chiudi();
+      }
+    }
+  };
+  giro(document2.body || document2.documentElement || document2);
+  chiudi();
+  return out;
+}
 async function lettore(c, url) {
   const t0 = Date.now();
   try {
@@ -22526,8 +22570,15 @@ async function lettore(c, url) {
       } catch {
       }
     }
+    let righeReg = [];
+    if (l.html) {
+      try {
+        righeReg = righeComeRegistro(l.html);
+      } catch {
+      }
+    }
     const { html: _h, originale: _o, file: _f, tolti, ...resto } = l;
-    return { t0, ms: Date.now() - t0, ...resto, tolti, righe, corpo };
+    return { t0, ms: Date.now() - t0, ...resto, tolti, righe, righeReg, corpo };
   } catch (e) {
     return { t0, ms: Date.now() - t0, errore: String(e.message).slice(0, 300) };
   }
