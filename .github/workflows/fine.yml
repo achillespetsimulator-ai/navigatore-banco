@@ -28,8 +28,8 @@ jobs:
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           curl -sSfL -o /tmp/s.zip https://storage.googleapis.com/chrome-for-testing-public/158.0.8127.36/linux64/chrome-headless-shell-linux64.zip
-          sudo mkdir -p /opt/chrome && sudo unzip -q /tmp/s.zip -d /opt/chrome
-          sudo ln -sf /opt/chrome/chrome-headless-shell-linux64/chrome-headless-shell /opt/chrome/chrome
+          sudo mkdir -p /opt/chrome && sudo chown "$USER" /opt/chrome && unzip -q /tmp/s.zip -d /opt/chrome
+          ln -sf /opt/chrome/chrome-headless-shell-linux64/chrome-headless-shell /opt/chrome/chrome
           sudo apt-get update -qq
           sudo DEBIAN_FRONTEND=noninteractive apt-get satisfy -y -qq --no-install-recommends "$(paste -sd, /opt/chrome/chrome-headless-shell-linux64/deb.deps)"
           /opt/chrome/chrome --version
