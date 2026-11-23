@@ -11749,6 +11749,7 @@ function identita(v) {
 }
 async function leggiConChrome(c, url, o) {
   const tetto = o.tetto;
+  const basta = Math.max(1e3, o.basta ?? BASTA);
   const t0 = Date.now();
   const tempi = {};
   let browserContextId = "";
@@ -11941,7 +11942,7 @@ async function leggiConChrome(c, url, o) {
       };
       if (ogni) g = setInterval(() => sveglia(), ogni);
     });
-    let passi = 0, altezza = 0, hVista = 0, fine = "tetto", scorso = "", inFondo = false, giaInFondo = false;
+    let passi = 0, altezza = 0, hVista = 0, fine = "tetto", scorso = "", inFondo = false, giaInFondo = false, ultimoGiro = 0;
     while (resta() > 0) {
       if (!await aspetta(() => pronto || reteFerma(Date.now()), GIRO)) break;
       if (fermo) return fatto(fermo);
@@ -11967,7 +11968,7 @@ async function leggiConChrome(c, url, o) {
         tempi.allungata = Date.now() - t0;
       }
       hVista = Math.max(hVista, st.h);
-      if (giaInFondo && st.car >= BASTA && (!inFondo || st.h > altezza + 1)) tempi.basta ??= Date.now() - t0;
+      if (giaInFondo && st.car >= basta && (!inFondo || st.h > altezza + 1)) tempi.basta ??= Date.now() - t0;
       else if (!inFondo || st.h > altezza + 1) {
         const r2 = await valuta(PASSATA(Math.max(100, Math.min(1e3, resta() - 500)))).catch(() => null);
         if (!r2 || r2.vuota) {
@@ -11977,13 +11978,22 @@ async function leggiConChrome(c, url, o) {
         passi += r2.passi;
         altezza = r2.h;
         inFondo = r2.fondo;
+        ultimoGiro = 0;
         if (inFondo) giaInFondo = true;
         hVista = Math.max(hVista, r2.h);
         if (inFondo) tempi.scorsa ??= Date.now() - t0;
         continue;
       }
       const ora = Date.now();
-      if (st.calma >= CALMA && ora - occupatoFino >= CALMA && reteFerma(ora)) {
+      const calma = st.calma >= CALMA, liberi = ora - occupatoFino >= CALMA, rete = reteFerma(ora);
+      if (ultimoGiro) {
+        const dt = ora - ultimoGiro;
+        if (!calma) tempi.attesaTesto = (tempi.attesaTesto || 0) + dt;
+        if (!liberi) tempi.attesaWorker = (tempi.attesaWorker || 0) + dt;
+        if (!rete) tempi.attesaRete = (tempi.attesaRete || 0) + dt;
+      }
+      ultimoGiro = ora;
+      if (calma && liberi && rete) {
         if (!o.fermatiAlRifiuto && stato !== null && stato >= 400) {
           if (await aspetta(() => scorso !== caricatore)) continue;
           break;
@@ -23421,10 +23431,10 @@ function righeComeRegistro(html) {
   chiudi();
   return out;
 }
-async function lettore(c, url, vecchio = false) {
+async function lettore(c, url, vecchio = false, basta) {
   const t0 = Date.now();
   try {
-    const l = await (vecchio ? leggiConChrome2 : leggiConChrome)(c, url, { tetto: 2e4, fermatiAlRifiuto: true });
+    const l = await (vecchio ? leggiConChrome2 : leggiConChrome)(c, url, { tetto: 2e4, fermatiAlRifiuto: true, basta });
     let corpo = "";
     if (l.fine !== "file" && l.fine !== "rifiuto" && l.html) {
       const doc = daHTML(l.html, l.url, "pagina", l.originale);
@@ -23492,7 +23502,8 @@ if (ha("gruppi")) {
         try {
           c = await lancia();
           const avvio = Date.now() - a;
-          const r = await Promise.race([lettore(c, x.u, v === "vecchio"), attesa4(9e4).then(() => ({ errore: "non ha finito in tempo" }))]);
+          const basta = G === 1 ? 25e3 : Math.max(8e3, Math.floor(6e4 / G));
+          const r = await Promise.race([lettore(c, x.u, v === "vecchio", basta), attesa4(9e4).then(() => ({ errore: "non ha finito in tempo" }))]);
           return { ...r, avvio, pronta: Date.now() - a };
         } catch (e) {
           return { errore: String(e.message).slice(0, 300), pronta: Date.now() - a };
