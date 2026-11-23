@@ -11725,7 +11725,8 @@ var PASSATA = (ms) => `(async () => {
   const r = [...document.querySelectorAll('body *')].filter((e) => e.scrollHeight > e.clientHeight + 50 && e.clientHeight > 200 && /auto|scroll|overlay/.test(getComputedStyle(e).overflowY)).sort((a, b) => b.clientHeight * b.clientWidth - a.clientHeight * a.clientWidth)[0] || null;
   if (n) n.riquadro = r;
   const inFondo = () => scrollY + innerHeight >= se.scrollHeight - 5 && (!r || r.scrollTop + r.clientHeight >= r.scrollHeight - 5);
-  const fine = performance.now() + ${ms};
+  const resto = () => se.scrollHeight - scrollY - innerHeight + (r ? r.scrollHeight - r.scrollTop - r.clientHeight : 0);
+  const fine = performance.now() + ${ms}, resto0 = resto();
   let passi = 0, fermo = false;
   if (n) n.scorre(true);
   try {
@@ -11741,7 +11742,8 @@ var PASSATA = (ms) => `(async () => {
   } finally {
     if (n) n.scorre(false);
   }
-  return { passi, fondo: inFondo(), fermo, y: Math.round(scrollY + (r ? r.scrollTop : 0)), h: se.scrollHeight + (r ? r.scrollHeight : 0) };
+  // scappa: si \xE8 andati avanti e il fondo non si \xE8 avvicinato (la pagina si allunga almeno quanto si scorre)
+  return { passi, fondo: inFondo(), fermo, scappa: passi > 0 && !inFondo() && resto() >= resto0, y: Math.round(scrollY + (r ? r.scrollTop : 0)), h: se.scrollHeight + (r ? r.scrollHeight : 0) };
 })()`;
 var HTML = `(() => {
   let ombre = 0;
@@ -11985,15 +11987,14 @@ async function leggiConChrome(c, url, o) {
       if (ogni) g = setInterval(() => sveglia(), ogni);
     });
     let passi = 0, altezza = 0, hVista = 0, fine = "tetto", scorso = "", inFondo = false, giaInFondo = false, ultimoGiro = 0;
-    let carInizio = -1, ferma = null, riprova = false;
+    let scappa = false, ferma = null, riprova = false;
     while (resta() > 0) {
       if (!await aspetta(() => pronto || reteFerma(Date.now()), GIRO)) break;
       if (fermo) return fatto(fermo);
       if (scorso !== caricatore) {
         scorso = caricatore;
-        inFondo = giaInFondo = riprova = false;
+        inFondo = giaInFondo = riprova = scappa = false;
         altezza = hVista = 0;
-        carInizio = -1;
         ferma = null;
         tempi.caricata = Date.now() - t0;
       }
@@ -12013,9 +12014,8 @@ async function leggiConChrome(c, url, o) {
         tempi.allungata = Date.now() - t0;
       }
       hVista = Math.max(hVista, st.h);
-      if (carInizio < 0) carInizio = st.car;
       const daScorrere = !inFondo || st.h > altezza + 1;
-      if (daScorrere && st.car >= basta && (giaInFondo || carInizio < basta)) tempi.basta ??= Date.now() - t0;
+      if (daScorrere && st.car >= basta && (giaInFondo || scappa)) tempi.basta ??= Date.now() - t0;
       else if (daScorrere && !riprova) {
         const r2 = await valuta(PASSATA(Math.max(100, Math.min(1e3, resta() - 500)))).catch(() => null);
         if (!r2 || r2.vuota) {
@@ -12029,6 +12029,7 @@ async function leggiConChrome(c, url, o) {
         if (inFondo) giaInFondo = true;
         hVista = Math.max(hVista, r2.h);
         if (inFondo) tempi.scorsa ??= Date.now() - t0;
+        scappa = !!r2.scappa;
         ferma = r2.fermo && !r2.fondo ? r2.y : null;
         riprova = ferma !== null;
         continue;
