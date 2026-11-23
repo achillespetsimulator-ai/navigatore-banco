@@ -11745,6 +11745,17 @@ var PASSATA = (ms) => `(async () => {
   // scappa: si \xE8 andati avanti e il fondo non si \xE8 avvicinato (la pagina si allunga almeno quanto si scorre)
   return { passi, fondo: inFondo(), fermo, scappa: passi > 0 && !inFondo() && resto() >= resto0, y: Math.round(scrollY + (r ? r.scrollTop : 0)), h: se.scrollHeight + (r ? r.scrollHeight : 0) };
 })()`;
+var CIMA = `(async () => {
+  ${FOTOGRAMMA}
+  const n = window.__navLettore;
+  const r = n && n.riquadro && n.riquadro.isConnected ? n.riquadro : null;
+  const y = scrollY, ry = r ? r.scrollTop : 0;
+  scrollTo({ top: 0, behavior: 'instant' }); if (r) r.scrollTo({ top: 0, behavior: 'instant' });
+  await fotogramma(); await fotogramma();
+  scrollTo({ top: y, behavior: 'instant' }); if (r) r.scrollTo({ top: ry, behavior: 'instant' });
+  await fotogramma();
+  return 1;
+})()`;
 var HTML = `(() => {
   let ombre = 0;
   for (const e of document.querySelectorAll('*')) if (e.shadowRoot) ombre++;
@@ -11821,12 +11832,12 @@ async function leggiConChrome(c, url, o) {
     let richieste = 0, bloccate = 0, documenti = 0;
     let stato = null, intestazioni = {}, originale, urlMostrato = url;
     let fermo = null, file, errore, urlRisposta = url;
-    let caricatore = "", pronto = false;
+    let caricatore = "", pronto = false, caricata = false;
     let sveglia = () => {
     };
     const nuovoDocumento = (id) => {
       caricatore = id;
-      pronto = false;
+      pronto = caricata = false;
       documenti++;
     };
     const risposta = async (p) => {
@@ -11913,6 +11924,7 @@ async function leggiConChrome(c, url, o) {
         if (p.name === "init" && p.loaderId !== caricatore) nuovoDocumento(p.loaderId);
         if (p.loaderId !== caricatore) return;
         if (p.name === "DOMContentLoaded") pronto = true;
+        if (p.name === "load") caricata = true;
         sveglia();
       } else if (m.method === "Fetch.requestPaused") {
         if (p.responseStatusCode !== void 0 || p.responseErrorReason !== void 0) {
@@ -11989,7 +12001,7 @@ async function leggiConChrome(c, url, o) {
     let passi = 0, altezza = 0, hVista = 0, fine = "tetto", scorso = "", inFondo = false, giaInFondo = false, ultimoGiro = 0;
     let scappa = false, ferma = null, riprova = false;
     while (resta() > 0) {
-      if (!await aspetta(() => pronto || reteFerma(Date.now()), GIRO)) break;
+      if (!await aspetta(() => (o.prova?.includes("load") ? caricata : pronto) || reteFerma(Date.now()), GIRO)) break;
       if (fermo) return fatto(fermo);
       if (scorso !== caricatore) {
         scorso = caricatore;
@@ -12045,6 +12057,12 @@ async function leggiConChrome(c, url, o) {
       }
       ultimoGiro = ora;
       if (calma && liberi && rete) {
+        if (o.prova?.includes("cima") && !tempi.cima && passi > 0) {
+          tempi.cima = Date.now() - t0;
+          await valuta(CIMA).catch(() => null);
+          await attesa(GIRO);
+          continue;
+        }
         if (!o.fermatiAlRifiuto && stato !== null && stato >= 400) {
           if (await aspetta(() => scorso !== caricatore)) continue;
           break;
@@ -23955,7 +23973,8 @@ function righeComeRegistro(html) {
 async function lettore(c, url, quale, basta) {
   const t0 = Date.now();
   try {
-    const l = await (quale === "vecchio" ? leggiConChrome2 : quale === "prima" ? leggiConChrome3 : leggiConChrome)(c, url, { tetto: 2e4, fermatiAlRifiuto: true, basta });
+    const [base, prova] = quale.split(":");
+    const l = await (base === "vecchio" ? leggiConChrome2 : base === "prima" ? leggiConChrome3 : leggiConChrome)(c, url, { tetto: 2e4, fermatiAlRifiuto: true, basta, prova });
     let corpo = "";
     if (l.fine !== "file" && l.fine !== "rifiuto" && l.html) {
       const doc = daHTML(l.html, l.url, "pagina", l.originale);
