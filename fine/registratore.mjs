@@ -11716,6 +11716,8 @@ var REGISTRO = `(() => {
     for (const e of x.querySelectorAll('*')) if (BLOCCO.test(e.tagName)) return false;
     return true;
   };
+  // il testo di un nodo in linea com'\xE8 nella riga (gli spazi come sono, senza script, stili, SVG\u2026)
+  const inRiga = (x) => x.nodeType === 3 ? x.nodeValue || '' : x.nodeType === 1 && !SALTA.test(x.tagName) ? [...x.childNodes].map(inRiga).join('') : '';
   // i cambiamenti sul posto, ognuno con il suo numero d'ordine (n): per ogni nodo di testo i valori di prima; per ogni
   // elemento i nodi in linea tolti, con il posto (i fratelli di allora e quello che li ha sostituiti; il testo si legge al
   // giro dopo, come per i blocchi); per ogni link gli indirizzi di prima
@@ -11730,16 +11732,20 @@ var REGISTRO = `(() => {
       if (m.type === 'characterData') {
         const t = m.target, v = m.oldValue || '';
         // da fermi un cambio dei soli numeri non si tiene (confrontato con il valore che l'ha sostituito)
-        if (t.nodeType === 3 && t.isConnected && dentro(t.parentNode) && (scorrendo || chiave(norm(v)) !== chiave(norm(t.nodeValue)))) aggiungi(storie, t, { v, n: ordine++ });
+        if (t.nodeType === 3 && t.isConnected && dentro(t.parentNode) && (scorrendo || chiave(norm(v)) !== chiave(norm(t.nodeValue)))) aggiungi(storie, t, { v, n: ordine++, s: scorrendo });
       } else if (m.type === 'attributes') {
         const a = m.target;
         if (a.nodeType === 1 && a.tagName === 'A' && m.oldValue && dentro(a)) aggiungi(indirizzi, a, m.oldValue);
       } else if (m.removedNodes.length && dentro(m.target)) {
+        // i nodi in linea tolti insieme (un innerHTML, textContent) sono un valore solo: quello che c'era in quel punto (un
+        // contatore scritto a pezzi, \xAB8\xBB \xAB,\xBB \xAB330\xBB, \xE8 \xAB8,330\xBB)
+        const xs = [];
         for (const x of m.removedNodes) {
           if (!(x.nodeType === 3 || (x.nodeType === 1 && !SALTA.test(x.tagName)))) continue;
-          if (inLinea(x)) aggiungi(posti, m.target, { x, prev: m.previousSibling, next: m.nextSibling, nuovi: [...m.addedNodes], s: scorrendo, n: ordine++ });
+          if (inLinea(x)) xs.push(x);
           else daTogliere.push(x);
         }
+        if (xs.length) aggiungi(posti, m.target, { xs, prev: m.previousSibling, next: m.nextSibling, nuovi: [...m.addedNodes], s: scorrendo, n: ordine++ });
       }
     }
   });
@@ -11756,17 +11762,24 @@ var REGISTRO = `(() => {
     if (p.next) { if (p.next.parentNode === P) return [p.next, 'prima']; const a = via(p.next); if (a) return a; }
     return !p.prev ? [P, 'inizio'] : [P, 'fine'];
   };
-  // I valori di prima di un punto, nell'ordine in cui sono comparsi e ognuno una volta, tranne quelli gi\xE0 detti: vuoti, o
-  // gi\xE0 dentro il testo di adesso in quel punto o un altro valore dello stesso punto (contenitore, lib/righe.ts: la sola
-  // definizione di \xABc'\xE8 gi\xE0\xBB, le parole di seguito, ogni segno conta: \xABAda\xBB non \xE8 dentro \xABAdam\xBB, \xABCapitolo 1\xBB non \xE8 dentro
-  // \xABCapitolo 10\xBB; fino al 24/11/2026 sera era carattere per carattere, e valori cos\xEC si perdevano)
+  // I valori di prima di un punto, nell'ordine in cui sono comparsi e ognuno una volta, tranne quelli gi\xE0 detti dal testo
+  // di adesso in quel punto o da un altro valore dello stesso punto. Gi\xE0 detti come, dipende da quando \xE8 cambiato:
+  // - mentre si scorreva (la pagina pu\xF2 riusare un punto per un altro elemento dell'elenco): a parole intere (contenitore,
+  //   lib/righe.ts, la sola definizione di \xABc'\xE8 gi\xE0\xBB: ogni segno conta, \xABCapitolo 1\xBB non \xE8 dentro \xABCapitolo 10\xBB, \xABAda\xBB non
+  //   \xE8 dentro \xABAdam\xBB);
+  // - da fermi (la pagina che cambia da s\xE9, e l\xEC non riusa i punti): carattere per carattere. Un testo che si scrive un
+  //   pezzo alla volta (una macchina da scrivere, un testo che arriva a pezzi) passa per valori che stanno tutti dentro
+  //   quello dopo: su bidgx.com il 24/11/2026, con le parole intere, 862.000 caratteri di valori in un punto solo.
   const valori = (l) => {
     const v = [];
     for (const e of l.slice().sort((a, b) => a.n - b.n)) {
       const t = norm(e.v);
-      if (t && !v.some((x) => x.t === t)) v.push({ t, ora: norm(e.ora) });
+      if (t && !v.some((x) => x.t === t)) v.push({ t, s: e.s, ora: norm(e.ora) });
     }
-    return v.filter((x, i) => !contenitore([[x.ora], ...v.filter((y, j) => j !== i).map((y) => [y.t])])([x.t])).map((x) => x.t);
+    return v.filter((x, i) => {
+      const altri = v.filter((y, j) => j !== i).map((y) => y.t);
+      return x.s ? !contenitore([[x.ora], ...altri.map((y) => [y])])([x.t]) : !(x.ora.includes(x.t) || altri.some((y) => y.includes(x.t)));
+    }).map((x) => x.t);
   };
   const segnoTesto = (vv) => '\u27E8prima qui: ' + vv.map((t) => '\xAB' + t + '\xBB').join(' \xB7 ') + '\u27E9';
   // i segni di adesso: per ogni punto della pagina (un nodo, o l'inizio e la fine dei figli di un elemento) il testo da
@@ -11774,15 +11787,21 @@ var REGISTRO = `(() => {
   const segniOra = () => {
     const punti = new Map(), m = new Map(), tutti = [];
     const metti = (k, q, e) => { let d = punti.get(k); if (!d) punti.set(k, d = {}); (d[q] = d[q] || []).push(e); };
-    for (const [t, vecchi] of storie) for (const e of vecchi) metti(t, 'dopo', { v: e.v, n: e.n, ora: t.nodeValue });
+    // il testo di adesso in quel punto: quello dell'elemento che contiene il nodo (un nodo di testo diviso in due, come fa
+    // splitText, ha il resto nel nodo accanto)
+    for (const [t, vecchi] of storie) {
+      const ora = t.parentNode ? testoDi(t.parentNode) : t.nodeValue;
+      for (const e of vecchi) metti(t, 'dopo', { v: e.v, n: e.n, s: e.s, ora });
+    }
     for (const [P, lista] of posti) {
-      const di = new Map(lista.map((p) => [p.x, p]));
+      const di = new Map();
+      for (const p of lista) for (const x of p.xs) di.set(x, p);
       let ora = null;
       for (const p of lista) {
         if (!p.testo) continue;
         if (ora === null) ora = testoDi(P);
         const [nodo, q] = posto(P, p, di, new Set());
-        metti(nodo, q, { v: p.testo, n: p.n, ora });
+        metti(nodo, q, { v: p.testo, n: p.n, s: p.s, ora });
       }
     }
     for (const [k, d] of punti) {
@@ -11798,9 +11817,8 @@ var REGISTRO = `(() => {
     // rispetto a quello che c'\xE8 adesso al loro posto)
     for (const lista of posti.values()) for (const p of lista) {
       if (p.testo !== undefined) continue;
-      if (p.x.isConnected) { p.testo = null; continue; }
-      const t = norm(testoDi(p.x));
-      p.testo = t && (p.s || chiave(t) !== chiave(norm(p.nuovi.map(testoDi).join(' ')))) ? t : null;
+      const t = norm(p.xs.filter((x) => !x.isConnected).map(inRiga).join(''));
+      p.testo = t && (p.s || chiave(t) !== chiave(norm(p.nuovi.map(inRiga).join('')))) ? t : null;
     }
     if (!l.some((x) => !x.isConnected)) return;
     const segni = segniOra().m;
