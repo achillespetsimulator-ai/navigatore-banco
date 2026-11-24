@@ -12047,6 +12047,12 @@ async function leggiConChrome(c, url, o) {
         continue;
       }
       riprova = false;
+      if (o.prova?.includes("cima2") && !tempi.cima && passi > 0 && (caricata || reteFerma(Date.now()))) {
+        tempi.cima = Date.now() - t0;
+        await valuta(CIMA).catch(() => null);
+        await attesa(GIRO);
+        continue;
+      }
       const ora = Date.now();
       const calma = st.calma >= CALMA, liberi = ora - occupatoFino >= CALMA, rete = reteFerma(ora);
       if (ultimoGiro) {
@@ -12057,9 +12063,18 @@ async function leggiConChrome(c, url, o) {
       }
       ultimoGiro = ora;
       if (calma && liberi && rete) {
-        if (o.prova?.includes("cima") && !tempi.cima && passi > 0) {
+        if (o.prova?.includes("cima") && !o.prova.includes("cima2") && !tempi.cima && passi > 0) {
           tempi.cima = Date.now() - t0;
+          const tc = Date.now();
           await valuta(CIMA).catch(() => null);
+          if (o.prova.includes("cima3")) {
+            const s2 = await valuta(REGISTRO).catch(() => null);
+            const ora2 = Date.now();
+            if (s2 && s2.calma >= CALMA && ultimaRete < tc && reteFerma(ora2) && ora2 - occupatoFino >= CALMA) {
+              fine = "finita";
+              break;
+            }
+          }
           await attesa(GIRO);
           continue;
         }
