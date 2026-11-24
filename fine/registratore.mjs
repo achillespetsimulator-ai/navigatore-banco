@@ -11606,7 +11606,7 @@ var REGISTRO = `(() => {
   if (window[K]) return window[K].stato();
   const BLOCCO = /^(ADDRESS|ARTICLE|ASIDE|BLOCKQUOTE|BR|CAPTION|DD|DETAILS|DIALOG|DIV|DL|DT|FIELDSET|FIGCAPTION|FIGURE|FOOTER|FORM|H[1-6]|HEADER|HR|LEGEND|LI|MAIN|NAV|OL|OPTION|P|PRE|SECTION|SUMMARY|TABLE|TBODY|TD|TFOOT|TH|THEAD|TR|UL|BUTTON|LABEL)$/;
   const SALTA = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|SVG|MATH|IFRAME|CANVAS|VIDEO|AUDIO|OBJECT)$/;
-  const viste = new Set(), osservate = new WeakSet(), tolte = new Set(), tolti = [];
+  const viste = new Set(), osservate = new WeakSet(), tolte = new Set(), tolti = [], righeTolte = new Set();
   let sporco = true, ultimoTesto = 0, ultimaAzione = 0, fineLoaf = 0, costo = 0, ultimoGiro = -1e9, testo = false, car = 0, caTolti = 0, daTogliere = [];
   const righe = (radice, osserva, fuori, prima) => {
     let cur = '';
@@ -11628,7 +11628,7 @@ var REGISTRO = `(() => {
     chiudi();
   };
   let scorrendo = false;
-  const tieni = (t) => { if (t && !tolte.has(t)) { tolte.add(t); tolti.push(t); caTolti += t.length; } };
+  const tieni = (t) => { if (t && !tolte.has(t)) { tolte.add(t); tolti.push(t); for (const r of t.split('\\n')) righeTolte.add(r); } };
   const chiave = (r) => r.replace(/\\p{Nd}+/gu, '#');
   // dove sta un nodo: il blocco pi\xF9 vicino che lo contiene, o null se non \xE8 testo della pagina (dentro uno script, uno
   // stile, un SVG\u2026, come per le righe, o nella testata del documento: il titolo). Il testo che un sito toglie da un <style>
@@ -11687,14 +11687,17 @@ var REGISTRO = `(() => {
     ultimoGiro = t; sporco = false;
     togliTesto();
     let nuovo = false, ora = 0;
+    const qui = new Set();
     righe(document.body || document.documentElement, osserva, (r) => {
       if (!testo && /\\p{L}/u.test(r)) testo = true;
       const k = r.replace(/\\p{Nd}+/gu, '#');
-      ora += r.length;
+      ora += r.length; qui.add(r);
       if (!viste.has(k)) { viste.add(k); nuovo = true; }
     });
     if (nuovo) ultimoTesto = performance.now();
-    // il testo raccolto: quello che c'\xE8 ora nella pagina pi\xF9 quello che ha tolto
+    // il testo raccolto: quello che c'\xE8 ora nella pagina pi\xF9 quello che ha tolto e non c'\xE8 pi\xF9
+    caTolti = 0;
+    for (const r of righeTolte) if (!qui.has(r)) caTolti += r.length;
     car = ora + caTolti;
     costo = performance.now() - t;
   };
@@ -11702,7 +11705,14 @@ var REGISTRO = `(() => {
     riquadro: null,
     azione: () => { ultimaAzione = performance.now(); },
     scorre: (si) => { scorrendo = si; },
-    tolti: () => { togliTesto(); return tolti; },
+    tolti: () => {
+      togliTesto();
+      // solo le righe che nella pagina non ci sono pi\xF9 (le altre si leggono nella pagina)
+      const qui = new Set(); righe(document.body || document.documentElement, null, (r) => qui.add(r));
+      const fuori = [];
+      for (const t of tolti) { const r = t.split('\\n').filter((x) => !qui.has(x)); if (r.length) fuori.push(r.join('\\n')); }
+      return fuori;
+    },
     stato: () => {
       let guardata = true;
       if (sporco && (document.body || document.documentElement)) { if (performance.now() - ultimoGiro >= 10 * costo) guarda(); else guardata = false; }
@@ -23081,12 +23091,12 @@ var REGISTRO2 = `(() => {
   const SALTA = /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|SVG|MATH|IFRAME|CANVAS|VIDEO|AUDIO|OBJECT)$/;
   const viste = new Set(), osservate = new WeakSet(), tolte = new Set(), tolti = [];
   let sporco = true, ultimoTesto = 0, ultimaAzione = 0, fineLoaf = 0, costo = 0, ultimoGiro = -1e9, testo = false, car = 0, caTolti = 0, daTogliere = [];
-  const righe = (radice, osserva, fuori) => {
+  const righe = (radice, osserva, fuori, prima) => {
     let cur = '';
     const chiudi = () => { const t = cur.replace(/\\s+/g, ' ').trim(); cur = ''; if (t) fuori(t); };
     const giro = (x) => {
       for (let k = x.firstChild; k; k = k.nextSibling) {
-        if (k.nodeType === 3) cur += k.nodeValue;
+        if (k.nodeType === 3) cur += prima && prima.has(k) ? prima.get(k) : k.nodeValue;
         else if (k.nodeType === 1) {
           if (SALTA.test(k.tagName)) continue;
           const b = BLOCCO.test(k.tagName);
@@ -23097,22 +23107,59 @@ var REGISTRO2 = `(() => {
         }
       }
     };
-    if (radice.nodeType === 3) cur = radice.nodeValue; else giro(radice);
+    if (radice.nodeType === 3) cur = prima && prima.has(radice) ? prima.get(radice) : radice.nodeValue; else giro(radice);
     chiudi();
+  };
+  let scorrendo = false;
+  const tieni = (t) => { if (t && !tolte.has(t)) { tolte.add(t); tolti.push(t); caTolti += t.length; } };
+  const chiave = (r) => r.replace(/\\p{Nd}+/gu, '#');
+  // dove sta un nodo: il blocco pi\xF9 vicino che lo contiene, o null se non \xE8 testo della pagina (dentro uno script, uno
+  // stile, un SVG\u2026, come per le righe, o nella testata del documento: il titolo). Il testo che un sito toglie da un <style>
+  // o da uno <script> (i siti che scrivono il CSS dal JavaScript lo sostituiscono di continuo) non \xE8 testo della pagina:
+  // fino al 24/11/2026 finiva in \xABTesto che la pagina ha tolto\xBB, 331 pezzi su 27.741 nelle chiamate vere (chess.com,
+  // helsinki.fi, zalando, il banner di OneTrust\u2026). Un nodo gi\xE0 staccato dalla pagina vale come testo (come prima)
+  const dove = (x) => {
+    let b = null;
+    for (let y = x; y; y = y.parentNode || y.host || null) {
+      if (y.nodeType !== 1) continue;
+      if (SALTA.test(y.tagName) || y.tagName === 'HEAD') return null;
+      if (!b && BLOCCO.test(y.tagName)) b = y;
+    }
+    return { b };
   };
   const mo = new MutationObserver((ms) => {
     sporco = true;
-    for (const m of ms) for (const x of m.removedNodes) if (x.nodeType === 3 || (x.nodeType === 1 && !SALTA.test(x.tagName))) daTogliere.push(x);
+    // il testo cambiato sul posto: per ogni nodo il valore di prima di questo gruppo di cambiamenti (il primo che arriva)
+    let prima = null;
+    const qui = new Map();
+    const dentro = (x) => { if (!qui.has(x)) qui.set(x, dove(x)); return qui.get(x); };
+    for (const m of ms) {
+      if (m.type === 'characterData') {
+        const t = m.target;
+        if (t.nodeType === 3 && t.isConnected && dentro(t.parentNode)) { prima = prima || new Map(); if (!prima.has(t)) prima.set(t, m.oldValue || ''); }
+      } else if (m.removedNodes.length && dentro(m.target)) {
+        for (const x of m.removedNodes) if (x.nodeType === 3 || (x.nodeType === 1 && !SALTA.test(x.tagName))) daTogliere.push(x);
+      }
+    }
+    if (!prima) return;
+    // la riga com'era: il blocco che contiene il nodo, letto con i valori di prima
+    const blocchi = new Set();
+    for (const t of prima.keys()) blocchi.add(dentro(t.parentNode).b || t);
+    for (const b of blocchi) {
+      const era = [], ora = new Set();
+      righe(b, null, (r) => era.push(r), prima);
+      if (!scorrendo) righe(b, null, (r) => ora.add(chiave(r)));
+      for (const r of era) if (scorrendo || !ora.has(chiave(r))) tieni(r);
+    }
   });
-  const osserva = (r) => { if (osservate.has(r)) return; osservate.add(r); mo.observe(r, { childList: true, subtree: true, characterData: true }); };
+  const osserva = (r) => { if (osservate.has(r)) return; osservate.add(r); mo.observe(r, { childList: true, subtree: true, characterData: true, characterDataOldValue: true }); };
   osserva(document);
   const togliTesto = () => {
     const l = daTogliere; daTogliere = [];
     for (const x of l) {
       if (x.isConnected) continue;
       const pezzi = []; righe(x, null, (t) => pezzi.push(t));
-      const t = pezzi.join('\\n');
-      if (t && !tolte.has(t)) { tolte.add(t); tolti.push(t); caTolti += t.length; }
+      tieni(pezzi.join('\\n'));
     }
   };
   let po = null;
@@ -23137,6 +23184,7 @@ var REGISTRO2 = `(() => {
   const n = {
     riquadro: null,
     azione: () => { ultimaAzione = performance.now(); },
+    scorre: (si) => { scorrendo = si; },
     tolti: () => { togliTesto(); return tolti; },
     stato: () => {
       let guardata = true;
@@ -23159,20 +23207,37 @@ var PASSATA2 = (ms) => `(async () => {
   if (!document.body || !se) return { vuota: true };
   const r = [...document.querySelectorAll('body *')].filter((e) => e.scrollHeight > e.clientHeight + 50 && e.clientHeight > 200 && /auto|scroll|overlay/.test(getComputedStyle(e).overflowY)).sort((a, b) => b.clientHeight * b.clientWidth - a.clientHeight * a.clientWidth)[0] || null;
   if (n) n.riquadro = r;
-  const pos = () => scrollY + ',' + (r ? r.scrollTop : 0);
   const inFondo = () => scrollY + innerHeight >= se.scrollHeight - 5 && (!r || r.scrollTop + r.clientHeight >= r.scrollHeight - 5);
-  const fine = performance.now() + ${ms};
-  let passi = 0;
-  while (!inFondo() && performance.now() < fine) {
-    const a = pos();
-    scrollBy({ top: innerHeight, behavior: 'instant' });
-    if (r) r.scrollBy({ top: r.clientHeight, behavior: 'instant' });
-    if (pos() === a) break;
-    if (n) n.azione();
-    passi++;
-    await fotogramma();
+  const resto = () => se.scrollHeight - scrollY - innerHeight + (r ? r.scrollHeight - r.scrollTop - r.clientHeight : 0);
+  const fine = performance.now() + ${ms}, resto0 = resto();
+  let passi = 0, fermo = false;
+  if (n) n.scorre(true);
+  try {
+    while (!inFondo() && performance.now() < fine) {
+      const y = scrollY, ry = r ? r.scrollTop : 0;
+      scrollBy({ top: innerHeight, behavior: 'instant' });
+      if (r) r.scrollBy({ top: r.clientHeight, behavior: 'instant' });
+      await fotogramma();
+      if (!(scrollY > y || (r && r.scrollTop > ry))) { fermo = true; break; }
+      if (n) n.azione();
+      passi++;
+    }
+  } finally {
+    if (n) n.scorre(false);
   }
-  return { passi, fondo: inFondo() || performance.now() < fine, h: se.scrollHeight + (r ? r.scrollHeight : 0) };
+  // scappa: si \xE8 andati avanti e il fondo non si \xE8 avvicinato (la pagina si allunga almeno quanto si scorre)
+  return { passi, fondo: inFondo(), fermo, scappa: passi > 0 && !inFondo() && resto() >= resto0, y: Math.round(scrollY + (r ? r.scrollTop : 0)), h: se.scrollHeight + (r ? r.scrollHeight : 0) };
+})()`;
+var CIMA2 = `(async () => {
+  ${FOTOGRAMMA2}
+  const n = window.__navLettore;
+  const r = n && n.riquadro && n.riquadro.isConnected ? n.riquadro : null;
+  const y = scrollY, ry = r ? r.scrollTop : 0;
+  scrollTo({ top: 0, behavior: 'instant' }); if (r) r.scrollTo({ top: 0, behavior: 'instant' });
+  await fotogramma(); await fotogramma();
+  scrollTo({ top: y, behavior: 'instant' }); if (r) r.scrollTo({ top: ry, behavior: 'instant' });
+  await fotogramma();
+  return 1;
 })()`;
 var HTML3 = `(() => {
   let ombre = 0;
@@ -23416,13 +23481,17 @@ async function leggiConChrome3(c, url, o) {
       if (ogni) g = setInterval(() => sveglia(), ogni);
     });
     let passi = 0, altezza = 0, hVista = 0, fine = "tetto", scorso = "", inFondo = false, giaInFondo = false, ultimoGiro = 0;
+    let scappa = false, ferma = null, riprova = false;
+    let passiDoc = 0, cimaFatta = false;
     while (resta() > 0) {
       if (!await aspetta(() => pronto || reteFerma(Date.now()), GIRO3)) break;
       if (fermo) return fatto(fermo);
       if (scorso !== caricatore) {
         scorso = caricatore;
-        inFondo = giaInFondo = false;
+        inFondo = giaInFondo = riprova = scappa = cimaFatta = false;
+        passiDoc = 0;
         altezza = hVista = 0;
+        ferma = null;
         tempi.caricata = Date.now() - t0;
       }
       chiediAiWorker();
@@ -23441,22 +23510,28 @@ async function leggiConChrome3(c, url, o) {
         tempi.allungata = Date.now() - t0;
       }
       hVista = Math.max(hVista, st.h);
-      if (giaInFondo && st.car >= basta && (!inFondo || st.h > altezza + 1)) tempi.basta ??= Date.now() - t0;
-      else if (!inFondo || st.h > altezza + 1) {
+      const daScorrere = !inFondo || st.h > altezza + 1;
+      if (daScorrere && st.car >= basta && (giaInFondo || scappa)) tempi.basta ??= Date.now() - t0;
+      else if (daScorrere && !riprova) {
         const r2 = await valuta(PASSATA2(Math.max(100, Math.min(1e3, resta() - 500)))).catch(() => null);
         if (!r2 || r2.vuota) {
           if (!sorda) await attesa4(GIRO3);
           continue;
         }
         passi += r2.passi;
+        passiDoc += r2.passi;
         altezza = r2.h;
         inFondo = r2.fondo;
         ultimoGiro = 0;
         if (inFondo) giaInFondo = true;
         hVista = Math.max(hVista, r2.h);
         if (inFondo) tempi.scorsa ??= Date.now() - t0;
+        scappa = !!r2.scappa;
+        ferma = r2.fermo && !r2.fondo ? r2.y : null;
+        riprova = ferma !== null;
         continue;
       }
+      riprova = false;
       const ora = Date.now();
       const calma = st.calma >= CALMA2, liberi = ora - occupatoFino >= CALMA2, rete = reteFerma(ora);
       if (ultimoGiro) {
@@ -23467,6 +23542,18 @@ async function leggiConChrome3(c, url, o) {
       }
       ultimoGiro = ora;
       if (calma && liberi && rete) {
+        if (passiDoc > 0 && !cimaFatta) {
+          cimaFatta = true;
+          tempi.cima ??= Date.now() - t0;
+          const tc = Date.now();
+          await valuta(CIMA2).catch(() => null);
+          const s2 = await valuta(REGISTRO2).catch(() => null);
+          const ora2 = Date.now();
+          if (!(s2 && s2.calma >= CALMA2 && ultimaRete < tc && reteFerma(ora2) && ora2 - occupatoFino >= CALMA2)) {
+            await attesa4(GIRO3);
+            continue;
+          }
+        }
         if (!o.fermatiAlRifiuto && stato !== null && stato >= 400) {
           if (await aspetta(() => scorso !== caricatore)) continue;
           break;
@@ -23488,7 +23575,7 @@ async function leggiConChrome3(c, url, o) {
     const passate = tempi.passate || 0;
     const cresceva = tempi.basta !== void 0 || fine === "tetto" && passate > 0 && (typeof r.h === "number" && r.h > hVista + 1 || tempi.finita - (tempi.allungata || 0) < 5e3);
     tempi.totale = Date.now() - t0;
-    return { html: r.html, url: urlMostrato, titolo: r.titolo, stato, intestazioni, originale, fine, cresceva, tolti: Array.isArray(r.tolti) ? r.tolti : [], tempi, richieste, bloccate, documenti, altezza, passi, versione };
+    return { html: r.html, url: urlMostrato, titolo: r.titolo, stato, intestazioni, originale, fine, cresceva, tolti: Array.isArray(r.tolti) ? r.tolti : [], tempi, richieste, bloccate, documenti, altezza, passi, versione, ...ferma !== null ? { ferma } : {} };
   } finally {
     for (const f of togli) f();
     if (browserContextId) c.invia("Target.disposeBrowserContext", { browserContextId }).catch(() => {
