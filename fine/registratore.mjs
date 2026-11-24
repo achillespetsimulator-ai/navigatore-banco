@@ -11695,6 +11695,10 @@ var REGISTRO = `(() => {
   const chiave = (r) => r.replace(/\\p{Nd}+/gu, '#');
   const norm = (t) => String(t || '').replace(/\\s+/g, ' ').trim();
   const testoDi = (x) => { const r = []; righe(x, null, (t) => r.push(t)); return r.join(' '); };
+  // il nome di un elemento in maiuscolo, come in righeDi: gli elementi dei disegni (SVG) e delle formule (MathML) hanno il
+  // nome in minuscolo (\xABsvg\xBB, \xABstyle\xBB, \xABtext\xBB), e fino al 24/11/2026 sera qui non valevano come SALTA: il CSS dentro i
+  // disegni dei grafici di Google Finance finiva tra i valori di prima (\xAB.fhLcl { stroke-dasharray\u2026 }\xBB)
+  const nome = (x) => String(x.tagName).toUpperCase();
   // dove sta un nodo: il blocco pi\xF9 vicino che lo contiene, o null se non \xE8 testo della pagina (dentro uno script, uno
   // stile, un SVG\u2026, come per le righe, o nella testata del documento: il titolo). Il testo che un sito toglie da un <style>
   // o da uno <script> (i siti che scrivono il CSS dal JavaScript lo sostituiscono di continuo) non \xE8 testo della pagina:
@@ -11704,20 +11708,20 @@ var REGISTRO = `(() => {
     let b = null;
     for (let y = x; y; y = y.parentNode || y.host || null) {
       if (y.nodeType !== 1) continue;
-      if (SALTA.test(y.tagName)) return null;
-      if (!b && BLOCCO.test(y.tagName)) b = y;
+      if (SALTA.test(nome(y))) return null;
+      if (!b && BLOCCO.test(nome(y))) b = y;
     }
     return { b };
   };
   // un nodo che sta dentro una riga: un nodo di testo, o un elemento che non \xE8 un blocco e non ne contiene
   const inLinea = (x) => {
     if (x.nodeType === 3) return true;
-    if (x.nodeType !== 1 || BLOCCO.test(x.tagName)) return false;
-    for (const e of x.querySelectorAll('*')) if (BLOCCO.test(e.tagName)) return false;
+    if (x.nodeType !== 1 || BLOCCO.test(nome(x))) return false;
+    for (const e of x.querySelectorAll('*')) if (BLOCCO.test(nome(e))) return false;
     return true;
   };
   // il testo di un nodo in linea com'\xE8 nella riga (gli spazi come sono, senza script, stili, SVG\u2026)
-  const inRiga = (x) => x.nodeType === 3 ? x.nodeValue || '' : x.nodeType === 1 && !SALTA.test(x.tagName) ? [...x.childNodes].map(inRiga).join('') : '';
+  const inRiga = (x) => x.nodeType === 3 ? x.nodeValue || '' : x.nodeType === 1 && !SALTA.test(nome(x)) ? [...x.childNodes].map(inRiga).join('') : '';
   // i cambiamenti sul posto, ognuno con il suo numero d'ordine (n): per ogni nodo di testo i valori di prima; per ogni
   // elemento i nodi in linea tolti, con il posto (i fratelli di allora e quello che li ha sostituiti; il testo si legge al
   // giro dopo, come per i blocchi); per ogni link gli indirizzi di prima
@@ -11735,13 +11739,13 @@ var REGISTRO = `(() => {
         if (t.nodeType === 3 && t.isConnected && dentro(t.parentNode) && (scorrendo || chiave(norm(v)) !== chiave(norm(t.nodeValue)))) aggiungi(storie, t, { v, n: ordine++, s: scorrendo });
       } else if (m.type === 'attributes') {
         const a = m.target;
-        if (a.nodeType === 1 && a.tagName === 'A' && m.oldValue && dentro(a)) aggiungi(indirizzi, a, m.oldValue);
+        if (a.nodeType === 1 && nome(a) === 'A' && m.oldValue && dentro(a)) aggiungi(indirizzi, a, m.oldValue);
       } else if (m.removedNodes.length && dentro(m.target)) {
         // i nodi in linea tolti insieme (un innerHTML, textContent) sono un valore solo: quello che c'era in quel punto (un
         // contatore scritto a pezzi, \xAB8\xBB \xAB,\xBB \xAB330\xBB, \xE8 \xAB8,330\xBB)
         const xs = [];
         for (const x of m.removedNodes) {
-          if (!(x.nodeType === 3 || (x.nodeType === 1 && !SALTA.test(x.tagName)))) continue;
+          if (!(x.nodeType === 3 || (x.nodeType === 1 && !SALTA.test(nome(x))))) continue;
           if (inLinea(x)) xs.push(x);
           else daTogliere.push(x);
         }
