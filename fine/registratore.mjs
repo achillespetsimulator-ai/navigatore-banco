@@ -11832,12 +11832,12 @@ async function leggiConChrome(c, url, o) {
     let richieste = 0, bloccate = 0, documenti = 0;
     let stato = null, intestazioni = {}, originale, urlMostrato = url;
     let fermo = null, file, errore, urlRisposta = url;
-    let caricatore = "", pronto = false, caricata = false;
+    let caricatore = "", pronto = false;
     let sveglia = () => {
     };
     const nuovoDocumento = (id) => {
       caricatore = id;
-      pronto = caricata = false;
+      pronto = false;
       documenti++;
     };
     const risposta = async (p) => {
@@ -11924,7 +11924,6 @@ async function leggiConChrome(c, url, o) {
         if (p.name === "init" && p.loaderId !== caricatore) nuovoDocumento(p.loaderId);
         if (p.loaderId !== caricatore) return;
         if (p.name === "DOMContentLoaded") pronto = true;
-        if (p.name === "load") caricata = true;
         sveglia();
       } else if (m.method === "Fetch.requestPaused") {
         if (p.responseStatusCode !== void 0 || p.responseErrorReason !== void 0) {
@@ -12000,12 +11999,14 @@ async function leggiConChrome(c, url, o) {
     });
     let passi = 0, altezza = 0, hVista = 0, fine = "tetto", scorso = "", inFondo = false, giaInFondo = false, ultimoGiro = 0;
     let scappa = false, ferma = null, riprova = false;
+    let passiDoc = 0, cimaFatta = false;
     while (resta() > 0) {
-      if (!await aspetta(() => (o.prova?.includes("load") ? caricata : pronto) || reteFerma(Date.now()), GIRO)) break;
+      if (!await aspetta(() => pronto || reteFerma(Date.now()), GIRO)) break;
       if (fermo) return fatto(fermo);
       if (scorso !== caricatore) {
         scorso = caricatore;
-        inFondo = giaInFondo = riprova = scappa = false;
+        inFondo = giaInFondo = riprova = scappa = cimaFatta = false;
+        passiDoc = 0;
         altezza = hVista = 0;
         ferma = null;
         tempi.caricata = Date.now() - t0;
@@ -12035,6 +12036,7 @@ async function leggiConChrome(c, url, o) {
           continue;
         }
         passi += r2.passi;
+        passiDoc += r2.passi;
         altezza = r2.h;
         inFondo = r2.fondo;
         ultimoGiro = 0;
@@ -12047,12 +12049,6 @@ async function leggiConChrome(c, url, o) {
         continue;
       }
       riprova = false;
-      if (o.prova?.includes("cima2") && !tempi.cima && passi > 0 && (caricata || reteFerma(Date.now()))) {
-        tempi.cima = Date.now() - t0;
-        await valuta(CIMA).catch(() => null);
-        await attesa(GIRO);
-        continue;
-      }
       const ora = Date.now();
       const calma = st.calma >= CALMA, liberi = ora - occupatoFino >= CALMA, rete = reteFerma(ora);
       if (ultimoGiro) {
@@ -12063,20 +12059,17 @@ async function leggiConChrome(c, url, o) {
       }
       ultimoGiro = ora;
       if (calma && liberi && rete) {
-        if (o.prova?.includes("cima") && !o.prova.includes("cima2") && !tempi.cima && passi > 0) {
-          tempi.cima = Date.now() - t0;
+        if (passiDoc > 0 && !cimaFatta) {
+          cimaFatta = true;
+          tempi.cima ??= Date.now() - t0;
           const tc = Date.now();
           await valuta(CIMA).catch(() => null);
-          if (o.prova.includes("cima3")) {
-            const s2 = await valuta(REGISTRO).catch(() => null);
-            const ora2 = Date.now();
-            if (s2 && s2.calma >= CALMA && ultimaRete < tc && reteFerma(ora2) && ora2 - occupatoFino >= CALMA) {
-              fine = "finita";
-              break;
-            }
+          const s2 = await valuta(REGISTRO).catch(() => null);
+          const ora2 = Date.now();
+          if (!(s2 && s2.calma >= CALMA && ultimaRete < tc && reteFerma(ora2) && ora2 - occupatoFino >= CALMA)) {
+            await attesa(GIRO);
+            continue;
           }
-          await attesa(GIRO);
-          continue;
         }
         if (!o.fermatiAlRifiuto && stato !== null && stato >= 400) {
           if (await aspetta(() => scorso !== caricatore)) continue;
@@ -23988,8 +23981,7 @@ function righeComeRegistro(html) {
 async function lettore(c, url, quale, basta) {
   const t0 = Date.now();
   try {
-    const [base, prova] = quale.split(":");
-    const l = await (base === "vecchio" ? leggiConChrome2 : base === "prima" ? leggiConChrome3 : leggiConChrome)(c, url, { tetto: 2e4, fermatiAlRifiuto: true, basta, prova });
+    const l = await (quale === "vecchio" ? leggiConChrome2 : quale === "prima" ? leggiConChrome3 : leggiConChrome)(c, url, { tetto: 2e4, fermatiAlRifiuto: true, basta });
     let corpo = "";
     if (l.fine !== "file" && l.fine !== "rifiuto" && l.html) {
       const doc = daHTML(l.html, l.url, "pagina", l.originale);
